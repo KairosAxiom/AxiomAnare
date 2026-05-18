@@ -13,6 +13,12 @@
  *   POST /stripe-webhook           → Stripe webhook receiver
  *                                    (STRIPE_WEBHOOK_SECRET secret)
  *
+ * Cron Triggers:
+ *   Every 3 days at 09:00 UTC     → Supabase keep-alive ping
+ *                                   (prevents 7-day inactivity pause on free tier)
+ *                                   Schedule configured in Cloudflare Dashboard:
+ *                                   Worker - Settings - Triggers - Cron Triggers
+ *
  * All API keys injected server-side — never exposed to client.
  *
  * Required Cloudflare env vars (Worker → Settings → Variables → Secrets):
@@ -507,5 +513,34 @@ export default {
       status: upstreamResponse.status,
       headers: responseHeaders,
     });
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CRON: Supabase keep-alive — prevents 7-day inactivity pause on free tier
+  // Triggered by Cloudflare Cron Trigger: "0 9 */3 * *" (every 3 days, 09:00 UTC)
+  // Query: GET /rest/v1/assets?select=id&limit=1
+  // Logs to Worker console — visible in CF dashboard → Logs tab
+  // ══════════════════════════════════════════════════════════════════════════
+  async scheduled(event, env, ctx) {
+    const supabaseUrl = env.SUPABASE_URL;
+    const serviceKey  = env.SUPABASE_SERVICE_KEY;
+    if (!supabaseUrl || !serviceKey) {
+      console.error("keepalive: Supabase env vars not configured");
+      return;
+    }
+    try {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/assets?select=id&limit=1`,
+        {
+          headers: {
+            "apikey":        serviceKey,
+            "Authorization": `Bearer ${serviceKey}`,
+          },
+        }
+      );
+      console.log(`keepalive ${res.status} @ ${new Date().toISOString()}`);
+    } catch (err) {
+      console.error("keepalive failed:", err.message);
+    }
   },
 };
