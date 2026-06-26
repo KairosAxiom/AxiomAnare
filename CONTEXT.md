@@ -147,7 +147,7 @@ testing (helpers needed EXECUTE for service_role + anon, not just authenticated)
 - [x] RAG pipeline — Cloudflare Worker /embed + /rag routes
 - [x] app.js — ragQuery(), buildRagContext(), streamClaude() with KB injection
 - [x] match_knowledge_chunks — SECURITY DEFINER, pgvector tested
-- [x] Total KB: 109 chunks embedded (voyage-3)
+- [x] Total KB: 192 chunks embedded (voyage-3)
 - [x] Stripe Checkout integration — Worker /create-checkout-session route
 - [x] Stripe webhook — Worker /stripe-webhook route (HMAC-SHA256, no external lib)
 - [x] auth.js — _doSignup() Stripe redirect, _handlePaymentReturn(), toast
