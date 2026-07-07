@@ -298,13 +298,27 @@ const U_PAT = {
   db:   /\b(d[bB]|decibel)\b/i,
 };
 
-const FS_PAT   = /\b(fs|f_?s|sampling.?rate|sample.?freq|sps|samplerate)\b/i;
-const RPM_PAT  = /\b(rpm|speed|shaft.?speed|rot(ation)?.?speed)\b/i;
-const UNIT_PAT = /\b(unit[s]?|measure(ment)?|quantity)\b/i;
-const DATE_PAT = /\b(date|timestamp|measured.?on|recorded)\b/i;
-const ASSET_PAT= /\b(asset|machine|equipment|tag|point.?id|location|route)\b/i;
-const TIME_PAT = /\b(time|t\b|timestamp|sec(ond)?s?|ms|elapsed|index|sample)\b/i;
-const SCALAR_PAT=/\b(rms|peak|overall|average|mean|kurtosis|crest|amplitude|severity)\b/i;
+// Bugfix (applies to all *_PAT constants below): \b requires a non-word character on
+// either side, and underscore IS a word character in regex — so "fs_hz", "rpm_value",
+// "timestamp_s", "asset_id", "rms_value" etc. (extremely common real-world column
+// naming) never matched any of these, silently falling through to be misclassified.
+// Fixed with letter-only lookaround boundaries so underscores/digits count as valid
+// delimiters on either side. Verified against real column names before applying —
+// no new false positives on vibration/threshold column names (accel_DE_X, temp_DE_C,
+// prox_NDE_gap_mm, etc.).
+const FS_PAT   = /(?<![a-zA-Z])(fs|f_?s|sampling.?rate|sample.?freq|sps|samplerate)(?![a-zA-Z])/i;
+const RPM_PAT  = /(?<![a-zA-Z])(rpm|speed|shaft.?speed|rot(?:ation)?.?speed)(?![a-zA-Z])/i;
+const UNIT_PAT = /(?<![a-zA-Z])(unit[s]?|measure(?:ment)?|quantity)(?![a-zA-Z])/i;
+const DATE_PAT = /(?<![a-zA-Z])(date|timestamp|measured.?on|recorded)(?![a-zA-Z])/i;
+const ASSET_PAT= /(?<![a-zA-Z])(asset|machine|equipment|tag|point.?id|location|route)(?![a-zA-Z])/i;
+// Bugfix: the original used \b(...)\b, but \b requires a non-word character on either
+// side, and underscore IS a word character in regex — so "timestamp_s", "time_ms",
+// "sample_idx" etc. (extremely common real-world column naming) never matched, silently
+// falling through to be misclassified as a signal/vibration column instead of 'time'.
+// Fixed with letter-only lookaround boundaries so underscores and digits count as valid
+// delimiters on either side, while "accel_DE_X" style names still correctly don't match.
+const TIME_PAT = /(?<![a-zA-Z])(time|t|timestamp|sec(?:ond)?s?|ms|elapsed|index|sample)(?![a-zA-Z])/i;
+const SCALAR_PAT=/(?<![a-zA-Z])(rms|peak|overall|average|mean|kurtosis|crest|amplitude|severity)(?![a-zA-Z])/i;
 const CMNT     = ['#', '//', ';', '!', '%'];
 
 // ─────────────────────────────────────────────────────────────────
