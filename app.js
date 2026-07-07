@@ -271,7 +271,7 @@ const CONFIG = {
   shaft_freq_search_max_hz: 200,
   harmonic_comb_count: 4,
   gravity_mm_s2: 9806.65,
-  chatbot_config: { model_version:"claude-sonnet-4-20250514", max_output_tokens:1000, disclaimer_text:"AI-GENERATED ANALYSIS - IMPORTANT NOTICE: This output is intended to assist qualified maintenance and reliability engineers. It does not constitute a certified engineering determination. All corrective actions must be reviewed and authorised by a suitably qualified professional. Kairos Ventures Pte Ltd accepts no liability for any decision arising from reliance on this output without independent qualified engineering review." },
+  chatbot_config: { model_version:"claude-sonnet-5", max_output_tokens:1000, disclaimer_text:"AI-GENERATED ANALYSIS - IMPORTANT NOTICE: This output is intended to assist qualified maintenance and reliability engineers. It does not constitute a certified engineering determination. All corrective actions must be reviewed and authorised by a suitably qualified professional. Kairos Ventures Pte Ltd accepts no liability for any decision arising from reliance on this output without independent qualified engineering review." },
 
   // Envelope demodulation bands -- ISO 13373-2:2016 §7.5
   // race: high-freq resonance band for race faults (BPFO, BPFI)
@@ -907,6 +907,10 @@ function runFromReady() {
   if (!pendingFile) return;
   if (!pendingRaw) { document.getElementById('ready-meta').textContent = 'Reading file...'; setTimeout(runFromReady, 300); return; }
   machineParams = readMachineParams();
+  window.machineParams = machineParams; // multiChannel.js is a separate script/closure — it can
+                                         // only see window.machineParams, never the local variable
+                                         // above. Without this line, manual Step 2 entries (RPM,
+                                         // sample rate, etc.) never reached the multi-channel path.
   showProcessing(pendingFile.name);
   // Route to multi-channel pipeline when MC mode is active
   if (window.MC && window.MC.enabled) {
@@ -2164,7 +2168,7 @@ async function activateStage(n){
 function doneStage(n,msg){const el=document.getElementById('stage-'+n);el.className='stage-item done';el.querySelector('.s-num').textContent=n;document.getElementById('s'+n+'-st').textContent=msg;}
 
 function resetApp(){
-  pendingFile=null;pendingRaw=null;pendingMatBuffer=false;machineParams={};isBaselineUpload=false;
+  pendingFile=null;pendingRaw=null;pendingMatBuffer=false;machineParams={};window.machineParams={};isBaselineUpload=false;
   const bt=document.getElementById('baseline-toggle'); if(bt) bt.classList.remove('active');
   const bcb=document.getElementById('baseline-checkbox'); if(bcb) bcb.checked=false;
   document.getElementById('fileInput').value='';

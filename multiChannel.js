@@ -1117,7 +1117,7 @@ ${flags.length ? flags.map(f => '(!) ' + f).join('\n') : '  No flags.'}
             'anthropic-version': '2023-06-01',
           },
           body: JSON.stringify({
-            model: window.CONFIG?.chatbot_config?.model_version || 'claude-sonnet-4-20250514',
+            model: window.CONFIG?.chatbot_config?.model_version || 'claude-sonnet-5',
             max_tokens: window.CONFIG?.chatbot_config?.max_output_tokens || 1000,
             stream: true,
             messages: [{ role: 'user', content: prompt }],
