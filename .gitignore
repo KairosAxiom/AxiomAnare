@@ -20,3 +20,5 @@ app_js_rag_patch.js
 match_knowledge_chunks.sql
 rag-embed-edge-function.ts
 schema_notes.md
+node_modules/
+package-lock.json
