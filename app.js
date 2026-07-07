@@ -290,7 +290,7 @@ const CONFIG = {
   // requiredAxes: minimum number of axes that must show the fault to confirm
   // boostPct: confidence boost applied when confirmed across axes
   // faultThreshold: minimum per-channel fault pct to count toward confirmation
-  mc_max_channels: 6,
+  mc_max_channels: 12, // ceiling for the channel-count dropdown (was 6) — 2x triaxial + temp/proximity headroom
   mc_cross_axis_fault_threshold_pct: 10,
   mc_cross_axis_rules: [
     { id:'ca_imbalance',   category:'mechanical', faultName:'Mechanical Unbalance',  requiredAxes:2, boostPct:15, label:'Rotational Imbalance — Cross-Axis Confirmation', clause:'ISO 13373-1:2002 §6.3.2', note:'Imbalance confirmed on ≥2 orthogonal axes — confidence elevated' },

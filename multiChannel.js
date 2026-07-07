@@ -1,14 +1,16 @@
 // ============================================================
 // AxiomAnare — Multi-Channel Engine  (multiChannel.js)
-// Up to 6 channels  |  2 locations × 3 axes  |  ISO 13373-1
+// Up to 12 channels (dropdown 1-12) | vibration + threshold-alert
+// channel types | 2 locations × 3 axes for vibration | ISO 13373-1
 // ============================================================
 
 // ── State ────────────────────────────────────────────────────
 window.MC = {
-  enabled:   false,          // toggled by wizard switch
-  mapping:   [],             // [{col, location, axis}]  user-assigned
-  results:   [],             // per-channel NVR results after pipeline
-  rawTable:  null,           // parsed rows (all columns) from parseData
+  enabled:      false,        // toggled by wizard switch
+  mapping:      [],           // [{col, type, location, axis, thresholdLabel, thresholdValue, thresholdDirection}]
+  results:      [],           // per-channel NVR results after pipeline
+  rawTable:     null,         // parsed rows (all columns) from parseData
+  channelCount: null,         // user-selected channel count (1-12); null = not yet set, defaults from detection
 };
 
 // ── Constants ─────────────────────────────────────────────────
@@ -17,9 +19,10 @@ const MC_LOCATIONS = [
   'Gearbox Input', 'Gearbox Output',
   'Bearing 1', 'Bearing 2', 'Bearing 3',
   'Bearing 4', 'Bearing 5', 'Bearing 6',
+  'Bearing 7', 'Bearing 8',
 ];
 const MC_AXES = ['X', 'Y', 'Z'];
-// MC_MAX_CHANNELS now from window.CONFIG.mc_max_channels
+// Ceiling for the channel-count dropdown comes from window.CONFIG.mc_max_channels (12)
 
 // ── ISO 13373-1 Cross-Axis Confidence Rules ───────────────────
 // Keys are fault categories; each rule boosts confidence when
@@ -86,7 +89,54 @@ function mcDetectSignalColumns(parsedResult) {
   });
 }
 
-// ── Extract values for a specific column from raw CSV string ──
+// ── All numeric columns assignable to a channel slot ───────────
+// Broader than mcDetectSignalColumns(): that function only returns columns that LOOK
+// like vibration signals, which is right for auto-detection but wrong for manual channel
+// assignment — a temperature or proximity-probe column should still be pickable in the
+// column dropdown, just defaulted to 'threshold' type rather than 'vibration'.
+// Only time/index/metadata-style columns are excluded here; everything else numeric-ish
+// is a legitimate channel candidate.
+function mcGetAssignableColumns(parsedResult) {
+  if (!parsedResult) return [];
+  const allHeaders = parsedResult.allHeaders || [];
+  const excludeAlways = [
+    'time','timestamp','t','date','seconds','ms','index','sample','i','n',
+    'machine','sensor','location','unit','tag','id','name','label','type',
+    'equipment','asset','point','channel','description','comment','note',
+  ];
+  return allHeaders.filter(h => {
+    const hl = h.toLowerCase();
+    return !excludeAlways.some(ex => hl === ex || hl.startsWith(ex + '_') || hl.endsWith('_' + ex));
+  });
+}
+
+// ── Guess a sensible default channel type from its column name ─
+// 'threshold' for anything that reads like a non-vibration process/environmental
+// measurement (temperature, proximity/displacement gap, pressure, etc.); 'vibration'
+// otherwise. This is only ever a DEFAULT — the user can override it per channel.
+function mcGuessChannelType(colName) {
+  const cl = colName.toLowerCase();
+  const thresholdPatterns = [
+    'temp','temperature','proximity','prox','gap','displacement','disp',
+    'pressure','press','flow','current','voltage','humidity',
+  ];
+  return thresholdPatterns.some(p => cl.includes(p)) ? 'threshold' : 'vibration';
+}
+
+// ── Guess a short human label for a threshold channel ───────────
+function mcGuessThresholdLabel(colName) {
+  const cl = colName.toLowerCase();
+  if (cl.includes('temp')) return 'Temperature';
+  if (cl.includes('prox') || cl.includes('gap') || cl.includes('disp')) return 'Proximity Gap';
+  if (cl.includes('press')) return 'Pressure';
+  if (cl.includes('flow')) return 'Flow';
+  if (cl.includes('current')) return 'Current';
+  if (cl.includes('voltage')) return 'Voltage';
+  if (cl.includes('humid')) return 'Humidity';
+  return colName;
+}
+
+
 function mcExtractColumn(raw, colName) {
   const result = typeof Papa !== 'undefined'
     ? Papa.parse(raw.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true })
@@ -236,49 +286,163 @@ function mcBuildCombinedVerdict(channelResults, crossAxisFindings) {
   };
 }
 
-// ── Render the channel mapping UI ────────────────────────────
-function mcRenderMappingUI(signalColumns) {
+// ── Build a default MC.mapping entry for slot i ────────────────
+// col may be null (slot added beyond what auto-detection found — user must assign
+// a column manually). Type is guessed from the column name when a column is known;
+// vibration otherwise, since that's the more common case for slot 0..N from detection.
+function mcDefaultMappingEntry(col, i, vibColsSet) {
+  const type = col ? (vibColsSet.has(col) ? 'vibration' : mcGuessChannelType(col)) : 'vibration';
+  const location = MC_LOCATIONS[i % MC_LOCATIONS.length];
+  if (type === 'threshold') {
+    return {
+      col, type: 'threshold', location,
+      thresholdLabel: col ? mcGuessThresholdLabel(col) : 'Threshold',
+      thresholdValue: null, thresholdDirection: 'above',
+      enabled: true,
+    };
+  }
+  return { col, type: 'vibration', location, axis: MC_AXES[i % 3], enabled: true };
+}
+
+// ── Render the channel mapping UI (called on new file load) ───
+// vibCols: auto-detected vibration-looking columns (from mcDetectSignalColumns).
+// parsedResult: full parseData() result, used to compute the broader assignable-column
+// list (vibration cols are unioned in so a header the auto-detector recognises is
+// always selectable, even if for some format reason mcGetAssignableColumns missed it).
+function mcRenderMappingUI(vibCols, parsedResult) {
   const container = document.getElementById('mc-mapping-container');
   if (!container) return;
 
-  // Limit to MC_MAX_CHANNELS
-  const cols = signalColumns.slice(0, window.CONFIG?.mc_max_channels || 6);
+  const assignable = mcGetAssignableColumns(parsedResult || {});
+  MC._assignableCols = Array.from(new Set([...vibCols, ...assignable]));
+  const vibColsSet = new Set(vibCols);
+  const ceiling = window.CONFIG?.mc_max_channels || 12;
 
-  // Initialise MC.mapping if needed
-  if (!MC.mapping.length || MC.mapping.length !== cols.length) {
-    MC.mapping = cols.map((col, i) => ({
-      col,
-      location: MC_LOCATIONS[i] || MC_LOCATIONS[0],
-      axis: MC_AXES[i % 3],
-      enabled: true,
-    }));
+  // Default channel count: sticky across file loads once the user has set it; on first
+  // load, default to however many vibration channels were auto-detected (min 1).
+  if (MC.channelCount === null) {
+    MC.channelCount = Math.min(Math.max(vibCols.length, 1), ceiling);
   }
+
+  // Ordered candidate list for auto-filling slots: detected vibration columns first
+  // (best default channels), then any other assignable column (temp/proximity/etc.)
+  const remaining = MC._assignableCols.filter(c => !vibColsSet.has(c));
+  const ordered = [...vibCols, ...remaining];
+
+  MC.mapping = [];
+  for (let i = 0; i < MC.channelCount; i++) {
+    MC.mapping.push(mcDefaultMappingEntry(ordered[i] || null, i, vibColsSet));
+  }
+
+  mcRenderMappingContainer();
+}
+
+// ── Pure render from current MC.mapping / MC.channelCount ─────
+// Called after initial mcRenderMappingUI() and after any count/type/column/field change.
+function mcRenderMappingContainer() {
+  const container = document.getElementById('mc-mapping-container');
+  if (!container) return;
+  const ceiling = window.CONFIG?.mc_max_channels || 12;
+  const cols = MC._assignableCols || [];
 
   container.innerHTML = `
     <div class="mc-mapping-header">
       <span class="mc-mapping-title">&#128290; Multi-Channel</span>
-      <span class="mc-mapping-sub">${cols.length} channel${cols.length !== 1 ? 's' : ''} detected — all enabled</span>
+      <span class="mc-mapping-sub">
+        Channels:
+        <select class="mc-select mc-select-count" id="mc-channel-count" onchange="mcSetChannelCount(this.value)">
+          ${Array.from({length: ceiling}, (_, n) => n + 1).map(n =>
+            `<option value="${n}" ${MC.channelCount === n ? 'selected' : ''}>${n}</option>`
+          ).join('')}
+        </select>
+        — assign a data column, type, and location to each
+      </span>
     </div>
     <div class="mc-channel-grid">
-      ${cols.map((col, i) => `
-        <div class="mc-channel-row" id="mc-ch-${i}">
-          <div class="mc-ch-col-label" title="${col}">${col}</div>
-          <label class="mc-ch-enable" style="display:none;">
-            <input type="checkbox" id="mc-en-${i}" checked
-              onchange="mcToggleChannel(${i}, this.checked)">
-            <span>Active</span>
-          </label>
-          <select class="mc-select" id="mc-loc-${i}" onchange="mcUpdateMapping(${i})">
-            ${MC_LOCATIONS.map(l => `<option value="${l}" ${MC.mapping[i]?.location === l ? 'selected' : ''}>${l}</option>`).join('')}
-          </select>
-          <select class="mc-select mc-select-axis" id="mc-ax-${i}" onchange="mcUpdateMapping(${i})">
-            ${MC_AXES.map(a => `<option value="${a}" ${MC.mapping[i]?.axis === a ? 'selected' : ''}>${a}</option>`).join('')}
-          </select>
-        </div>
-      `).join('')}
+      ${MC.mapping.map((ch, i) => mcRenderChannelRow(ch, i, cols)).join('')}
     </div>
   `;
 }
+
+// ── Render a single channel row (column + type + type-specific fields) ─
+function mcRenderChannelRow(ch, i, cols) {
+  return `
+    <div class="mc-channel-row" id="mc-ch-${i}">
+      <select class="mc-select mc-select-col" id="mc-col-${i}" onchange="mcUpdateMapping(${i})" title="Data column for this channel">
+        ${!ch.col ? `<option value="" selected disabled>-- select column --</option>` : ''}
+        ${cols.map(c => `<option value="${c}" ${ch.col === c ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+      <select class="mc-select mc-select-type" id="mc-type-${i}" onchange="mcUpdateChannelType(${i}, this.value)" title="How this channel should be analysed">
+        <option value="vibration" ${ch.type === 'vibration' ? 'selected' : ''}>Vibration</option>
+        <option value="threshold" ${ch.type === 'threshold' ? 'selected' : ''}>Threshold (temp / proximity / etc.)</option>
+      </select>
+      <div class="mc-ch-fields" id="mc-fields-${i}">${mcRenderChannelFields(ch, i)}</div>
+    </div>
+  `;
+}
+
+// ── Type-specific fields: vibration gets Location+Axis, threshold gets ──
+// Location + label + threshold value + above/below direction.
+function mcRenderChannelFields(ch, i) {
+  if (ch.type === 'threshold') {
+    return `
+      <select class="mc-select" id="mc-loc-${i}" onchange="mcUpdateMapping(${i})">
+        ${MC_LOCATIONS.map(l => `<option value="${l}" ${ch.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+      </select>
+      <input class="mc-text-input" id="mc-label-${i}" type="text" value="${ch.thresholdLabel || ''}"
+        placeholder="e.g. DE Bearing Temp" onchange="mcUpdateMapping(${i})" title="Display label for this channel">
+      <input class="mc-num-input" id="mc-thresh-${i}" type="number" value="${ch.thresholdValue ?? ''}"
+        placeholder="Limit" onchange="mcUpdateMapping(${i})" title="Alert threshold value">
+      <select class="mc-select mc-select-dir" id="mc-dir-${i}" onchange="mcUpdateMapping(${i})" title="Alert when reading goes above or below the limit">
+        <option value="above" ${ch.thresholdDirection === 'above' ? 'selected' : ''}>Alert if above</option>
+        <option value="below" ${ch.thresholdDirection === 'below' ? 'selected' : ''}>Alert if below</option>
+      </select>
+    `;
+  }
+  return `
+    <select class="mc-select" id="mc-loc-${i}" onchange="mcUpdateMapping(${i})">
+      ${MC_LOCATIONS.map(l => `<option value="${l}" ${ch.location === l ? 'selected' : ''}>${l}</option>`).join('')}
+    </select>
+    <select class="mc-select mc-select-axis" id="mc-ax-${i}" onchange="mcUpdateMapping(${i})">
+      ${MC_AXES.map(a => `<option value="${a}" ${ch.axis === a ? 'selected' : ''}>${a}</option>`).join('')}
+    </select>
+  `;
+}
+
+// ── Channel-count dropdown handler ─────────────────────────────
+// Pads with new default slots (guessed from any still-unused assignable column) or
+// truncates from the end. Existing slots keep their current assignment untouched.
+window.mcSetChannelCount = function(n) {
+  n = parseInt(n);
+  const ceiling = window.CONFIG?.mc_max_channels || 12;
+  n = Math.max(1, Math.min(ceiling, n));
+  MC.channelCount = n;
+
+  const usedCols = new Set(MC.mapping.map(m => m.col).filter(Boolean));
+  const vibColsSet = new Set(MC.mapping.filter(m => m.type === 'vibration' && m.col).map(m => m.col));
+  const spareCols = (MC._assignableCols || []).filter(c => !usedCols.has(c));
+
+  if (n > MC.mapping.length) {
+    for (let i = MC.mapping.length; i < n; i++) {
+      const col = spareCols.shift() || null;
+      MC.mapping.push(mcDefaultMappingEntry(col, i, vibColsSet));
+    }
+  } else {
+    MC.mapping = MC.mapping.slice(0, n);
+  }
+  mcRenderMappingContainer();
+};
+
+// ── Column/type/field change handlers ──────────────────────────
+window.mcUpdateChannelType = function(i, newType) {
+  if (!MC.mapping[i]) return;
+  const col = MC.mapping[i].col;
+  const location = MC.mapping[i].location;
+  MC.mapping[i] = newType === 'threshold'
+    ? { col, type: 'threshold', location, thresholdLabel: col ? mcGuessThresholdLabel(col) : 'Threshold', thresholdValue: null, thresholdDirection: 'above', enabled: true }
+    : { col, type: 'vibration', location, axis: MC_AXES[i % 3], enabled: true };
+  mcRenderMappingContainer();
+};
 
 window.mcToggleChannel = function(i, enabled) {
   if (MC.mapping[i]) MC.mapping[i].enabled = enabled;
@@ -287,12 +451,54 @@ window.mcToggleChannel = function(i, enabled) {
 };
 
 window.mcUpdateMapping = function(i) {
-  if (!MC.mapping[i]) return;
-  const loc = document.getElementById('mc-loc-' + i);
-  const ax  = document.getElementById('mc-ax-' + i);
-  if (loc) MC.mapping[i].location = loc.value;
-  if (ax)  MC.mapping[i].axis = ax.value;
+  const m = MC.mapping[i];
+  if (!m) return;
+  const colEl = document.getElementById('mc-col-' + i);
+  if (colEl) m.col = colEl.value;
+
+  if (m.type === 'threshold') {
+    const loc = document.getElementById('mc-loc-' + i);
+    const lbl = document.getElementById('mc-label-' + i);
+    const thr = document.getElementById('mc-thresh-' + i);
+    const dir = document.getElementById('mc-dir-' + i);
+    if (loc) m.location = loc.value;
+    if (lbl) m.thresholdLabel = lbl.value;
+    if (thr) m.thresholdValue = thr.value === '' ? null : parseFloat(thr.value);
+    if (dir) m.thresholdDirection = dir.value;
+  } else {
+    const loc = document.getElementById('mc-loc-' + i);
+    const ax  = document.getElementById('mc-ax-' + i);
+    if (loc) m.location = loc.value;
+    if (ax)  m.axis = ax.value;
+  }
 };
+
+// ── A12 (multi-channel): resolve sample rate ONCE for the whole file ──────
+// All channels in a multi-channel file share one time base, so this is resolved once,
+// not per-channel. Same priority as the single-channel path in app.js: user hand-keyed
+// exact value > auto-detected (header/timestamp) > user-selected Fmax preset > none.
+// Returns null (never a silent CONFIG.default_sample_rate_hz fallback) if nothing found —
+// caller must quarantine the run and ask the user for a value, exactly like runPipeline().
+function mcResolveSampleRate(raw) {
+  const mp = window.machineParams || {};
+  if (mp.declaredSampleRate && !mp.sampleRateIsPreset) {
+    return { sr: mp.declaredSampleRate, srSource: 'declared', sampleRateAssumed: false };
+  }
+
+  const result = typeof Papa !== 'undefined'
+    ? Papa.parse(raw.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true })
+    : null;
+  if (result?.data?.length > 5) {
+    const headers = result.meta?.fields || Object.keys(result.data[0] || {});
+    const { sampleRate, sampleRateSource } = window.detectSampleRateFromRows(headers, result.data);
+    if (sampleRate) return { sr: sampleRate, srSource: sampleRateSource, sampleRateAssumed: false };
+  }
+
+  if (mp.declaredSampleRate && mp.sampleRateIsPreset) {
+    return { sr: mp.declaredSampleRate, srSource: 'preset', sampleRateAssumed: true };
+  }
+  return null;
+}
 
 // ── Run pipeline for each active channel ─────────────────────
 // Called from app.js instead of single-channel runPipeline when MC.enabled
@@ -302,11 +508,23 @@ async function runMultiChannelPipeline(raw, filename) {
   if (!MC.mapping.some(m => m.enabled)) {
     MC.mapping.forEach(m => m.enabled = true);
   }
-  const activeChannels = MC.mapping.filter(m => m.enabled);
+  const activeChannels = MC.mapping.filter(m => m.enabled && m.col);
   if (!activeChannels.length) {
-    alert('No signal columns found in this file.');
+    alert('No channels assigned — pick a data column for at least one channel.');
     return;
   }
+
+  // == A12: no silent default — quarantine the whole run if no sample rate can be
+  // resolved, same policy as the single-channel pipeline (was previously the exact
+  // bug A12 fixed for single-channel: `declaredSampleRate || CONFIG.default_sample_rate_hz`).
+  const srResolved = mcResolveSampleRate(raw);
+  if (!srResolved) {
+    if (typeof doneStage === 'function') doneStage(1, 'QUARANTINED');
+    if (typeof setNote === 'function') setNote('(!) Sample rate required — not found in file and not provided. Enter it in Step 2 (Sampling Rate field or Fmax preset) before running analysis.');
+    if (typeof requireSampleRateInput === 'function') requireSampleRateInput();
+    return;
+  }
+  const { sr, srSource, sampleRateAssumed } = srResolved;
 
   // Show processing screen
   const procScreen = document.getElementById('processing-screen');
@@ -315,19 +533,42 @@ async function runMultiChannelPipeline(raw, filename) {
 
   for (let i = 0; i < activeChannels.length; i++) {
     const ch = activeChannels[i];
+
+    // ── Threshold-type channel: simple over/under alert, no FFT/fault classification ──
+    if (ch.type === 'threshold') {
+      const label = `[${ch.location} · ${ch.thresholdLabel || ch.col}]`;
+      if (typeof setNote === 'function') setNote(`Channel ${i+1}/${activeChannels.length} — ${label}`);
+      const { values } = mcExtractColumn(raw, ch.col);
+      if (values.length < 1) {
+        MC.results.push({ col: ch.col, location: ch.location, type: 'threshold', label: ch.thresholdLabel || ch.col, error: 'No data' });
+        continue;
+      }
+      if (ch.thresholdValue === null || ch.thresholdValue === undefined || isNaN(ch.thresholdValue)) {
+        MC.results.push({ col: ch.col, location: ch.location, type: 'threshold', label: ch.thresholdLabel || ch.col, error: 'No threshold value set' });
+        continue;
+      }
+      const extreme = ch.thresholdDirection === 'below' ? Math.min(...values) : Math.max(...values);
+      const alert_ = ch.thresholdDirection === 'below' ? extreme < ch.thresholdValue : extreme > ch.thresholdValue;
+      MC.results.push({
+        col: ch.col, location: ch.location, type: 'threshold',
+        label: ch.thresholdLabel || ch.col,
+        value: extreme, thresholdValue: ch.thresholdValue,
+        direction: ch.thresholdDirection, alert: alert_,
+      });
+      continue;
+    }
+
+    // ── Vibration-type channel: full FFT / fault-classification / RUL pipeline ──
     const label = `[${ch.location} · ${ch.axis}]`;
     if (typeof setNote === 'function') setNote(`Channel ${i+1}/${activeChannels.length} — ${label}`);
 
     // Extract this column's values from raw
     const { values, unit } = mcExtractColumn(raw, ch.col);
     if (values.length < 10) {
-      MC.results.push({ col: ch.col, location: ch.location, axis: ch.axis, error: 'Insufficient data' });
+      MC.results.push({ col: ch.col, location: ch.location, axis: ch.axis, type: 'vibration', error: 'Insufficient data' });
       continue;
     }
 
-    // Build a mini-raw string with just this column for compatibility with runPipeline internals
-    // But we run computations directly to avoid UI side-effects
-    const sr = window.machineParams?.declaredSampleRate || window.CONFIG.default_sample_rate_hz;
     const cu = window.CONFIG.unit_conversion_factors.find(r => r.canonical_flag === 1).to_unit;
     const currentClassId = (window.__getSelClassId && window.__getSelClassId()) || window.selClassId;
 
@@ -380,6 +621,7 @@ async function runMultiChannelPipeline(raw, filename) {
 
     MC.results.push({
       col: ch.col,
+      type: 'vibration',
       location: ch.location,
       axis: ch.axis,
       rms: rms.toFixed(3),
@@ -394,16 +636,20 @@ async function runMultiChannelPipeline(raw, filename) {
       fftR,
       rulR,
       healthIdx,
-      sr,
+      sr, srSource, sampleRateAssumed,
       cu,
       n,
       classRow,
     });
   }
 
-  // Cross-axis analysis
-  const crossAxisFindings = mcApplyCrossAxisRules(MC.results.filter(r => !r.error));
-  const combined = mcBuildCombinedVerdict(MC.results.filter(r => !r.error), crossAxisFindings);
+  // Cross-axis analysis and combined verdict — vibration channels only; threshold
+  // channels never feed fault/zone/health scoring, only their own alert state.
+  const vibResults = MC.results.filter(r => !r.error && r.type === 'vibration');
+  const thresholdResults = MC.results.filter(r => r.type === 'threshold');
+  const crossAxisFindings = mcApplyCrossAxisRules(vibResults);
+  const combined = mcBuildCombinedVerdict(vibResults, crossAxisFindings);
+  if (combined) combined.sampleRateAssumed = sampleRateAssumed;
 
   // Render MC combined verdict
   if (procScreen) procScreen.style.display = 'none';
@@ -411,9 +657,10 @@ async function runMultiChannelPipeline(raw, filename) {
   mcRenderResults(MC.results, combined, filename);
 
   // Render worst channel through single-channel pipeline for FFT/radar/trend charts
-  // Find worst channel by zone then RMS
+  // Find worst channel by zone then RMS — vibration channels only (threshold channels
+  // have no zone/RMS to compare)
   const zoneOrder = ['A','B','C','D'];
-  const worstCh = MC.results.filter(r => !r.error).sort((a, b) => {
+  const worstCh = vibResults.sort((a, b) => {
     const zi = zoneOrder.indexOf(b.zoneRow?.zone_label) - zoneOrder.indexOf(a.zoneRow?.zone_label);
     return zi !== 0 ? zi : parseFloat(b.rms) - parseFloat(a.rms);
   })[0];
@@ -442,9 +689,12 @@ async function runMultiChannelPipeline(raw, filename) {
     };
     // Update results meta label
     const metaEl = document.getElementById('results-meta');
-    if (metaEl) metaEl.textContent = `Multi-Channel · ${MC.results.filter(r=>!r.error).length} channels · Worst: ${worstCh.location} (${worstCh.axis})`;
+    if (metaEl) metaEl.textContent = `Multi-Channel · ${vibResults.length} vibration + ${thresholdResults.length} threshold channel${(vibResults.length+thresholdResults.length)!==1?'s':''} · Worst: ${worstCh.location} (${worstCh.axis})`;
     // Run single-channel render for charts
     if (typeof renderResults === 'function') renderResults();
+  } else {
+    const metaEl = document.getElementById('results-meta');
+    if (metaEl) metaEl.textContent = `Multi-Channel · ${thresholdResults.length} threshold channel${thresholdResults.length!==1?'s':''} (no vibration channels configured)`;
   }
 
   // Increment free analysis counter + apply gates (watermark, PDF lock, trial banner)
@@ -489,7 +739,12 @@ function mcRenderResults(channelResults, combined, filename) {
                    : combined?.worstZone === 'B' ? 'rgba(245,158,11,0.35)'
                    : 'rgba(77,157,224,0.35)';
   const hiColor = h => h >= 75 ? '#22c55e' : h >= 50 ? '#f59e0b' : h >= 25 ? '#f97316' : '#ef4444';
-  const ok = channelResults.filter(r => !r.error);
+  // Vibration channels drive charts/zone/health scoring. Threshold channels are a
+  // separate, simpler alert display — they never feed the combined verdict.
+  const ok = channelResults.filter(r => !r.error && r.type === 'vibration');
+  const thresholds = channelResults.filter(r => r.type === 'threshold' && !r.error);
+  const thresholdErrors = channelResults.filter(r => r.type === 'threshold' && r.error);
+  const activeAlerts = thresholds.filter(t => t.alert);
 
   container.innerHTML = `
     <div class="mc-combined-card" style="border-color:${cardBorder}">
@@ -497,26 +752,28 @@ function mcRenderResults(channelResults, combined, filename) {
         <span class="mc-combined-icon">&#128202;</span>
         <div>
           <div class="mc-combined-title">Multi-Channel Combined Assessment</div>
-          <div class="mc-combined-sub">${filename} &middot; ${channelResults.length} channel${channelResults.length!==1?'s':''} &middot; ISO 13373-1${combined?.zoneOverrideReason ? `<br><span style="color:${zoneColors[combined?.worstZone]||'#f59e0b'};font-size:9px;">&#9888; Zone escalated from ${combined.worstZoneRMS} (RMS) &mdash; ${combined.zoneOverrideReason}</span>` : ''}</div>
+          <div class="mc-combined-sub">${filename} &middot; ${ok.length} vibration + ${thresholds.length} threshold channel${(ok.length+thresholds.length)!==1?'s':''} &middot; ISO 13373-1${combined?.zoneOverrideReason ? `<br><span style="color:${zoneColors[combined?.worstZone]||'#f59e0b'};font-size:9px;">&#9888; Zone escalated from ${combined.worstZoneRMS} (RMS) &mdash; ${combined.zoneOverrideReason}</span>` : ''}${combined?.sampleRateAssumed ? `<br><span style="color:var(--orange, #b36a00);font-size:9px;">&#9888; Sample rate is an assumed preset, not detected or entered — dependent frequency citations are unverified until confirmed.</span>` : ''}</div>
         </div>
         <div class="mc-combined-zone" style="background:${zoneBg[combined?.worstZone]||'rgba(85,85,85,0.1)'};border-color:${zoneColors[combined?.worstZone]||'#555'};color:${zoneColors[combined?.worstZone]||'#555'}">
-          Zone ${combined?.worstZone||'&mdash;'}
+          ${ok.length ? 'Zone ' + (combined?.worstZone||'&mdash;') : (activeAlerts.length ? 'ALERT' : 'OK')}
         </div>
       </div>
       <div class="mc-ch-score-row">
         ${ok.map((ch,i)=>{const col=MC_CH_COLORS[i]||MC_CH_COLORS[0];return`<div class="mc-ch-score-cell"><div class="mc-ch-score-dot" style="background:${col.line}"></div><div class="mc-ch-score-loc">${ch.location}<br><span class="mc-ch-score-axis">${ch.axis}</span></div><div class="mc-ch-score-hi" style="color:${hiColor(ch.healthIdx)}">${ch.healthIdx}</div><div class="mc-ch-score-zone" style="color:${zoneColors[ch.zoneRow?.zone_label]||'#888'}">Zone ${ch.zoneRow?.zone_label||'?'}</div><div class="mc-ch-score-rms">${ch.rms} mm/s</div></div>`;}).join('')}
+        ${thresholds.map(t=>`<div class="mc-ch-score-cell"><div class="mc-ch-score-dot" style="background:${t.alert?'#ef4444':'#22c55e'}"></div><div class="mc-ch-score-loc">${t.location}<br><span class="mc-ch-score-axis">${t.label}</span></div><div class="mc-ch-score-hi" style="color:${t.alert?'#ef4444':'#22c55e'}">${t.alert?'ALERT':'OK'}</div><div class="mc-ch-score-zone" style="color:var(--muted)">${t.direction==='below'?'&le;':'&ge;'} ${t.thresholdValue}</div><div class="mc-ch-score-rms">${t.value.toFixed?.(1) ?? t.value}</div></div>`).join('')}
       </div>
       <div class="mc-combined-metrics">
         <div class="mc-metric-box"><div class="mc-metric-val" style="color:${hiColor(combined?.healthIdx||0)}">${combined?.healthIdx??'&mdash;'}</div><div class="mc-metric-label">Combined Health</div></div>
         <div class="mc-metric-box"><div class="mc-metric-val">${combined?.minRUL??'&mdash;'}<span class="mc-metric-unit">d</span></div><div class="mc-metric-label">Min RUL</div></div>
-        <div class="mc-metric-box"><div class="mc-metric-val">${ok.length}</div><div class="mc-metric-label">Channels OK</div></div>
-        <div class="mc-metric-box"><div class="mc-metric-val">${combined?.crossAxisFindings?.length??0}</div><div class="mc-metric-label">Cross-Axis</div></div>
+        <div class="mc-metric-box"><div class="mc-metric-val">${ok.length}</div><div class="mc-metric-label">Vib. Channels OK</div></div>
+        <div class="mc-metric-box"><div class="mc-metric-val" style="color:${activeAlerts.length?'#ef4444':'inherit'}">${activeAlerts.length}</div><div class="mc-metric-label">Threshold Alerts</div></div>
       </div>
       ${combined?.topFault?`<div class="mc-top-fault"><span class="mc-fault-icon">&#9888;</span><div style="flex:1"><div class="mc-fault-name">${combined.topFault.name}${combined.topFault.crossAxis?'<span class="mc-xaxis-badge">Cross-Axis</span>':''}</div><div class="mc-fault-meta">${combined.topFault.location||''}${combined.topFault.axes?' &middot; Axes: '+combined.topFault.axes.join(', '):combined.topFault.axis?' &middot; '+combined.topFault.axis:''} &middot; ${combined.topFault.pct?.toFixed(0)}% confidence${combined.topFault.clause?'<span class="mc-iso-ref">'+combined.topFault.clause+'</span>':''}</div></div><div class="mc-fault-pct-bar"><div style="width:${combined.topFault.pct}%;background:${window.faultIndicatorColor?window.faultIndicatorColor(combined.topFault.pct):'#f59e0b'}"></div></div></div>`:''}
     </div>
 
     ${combined?.crossAxisFindings?.length?`<div class="mc-section-header"><span>&#128279; Cross-Axis Fault Confirmation</span><span class="mc-section-clause">ISO 13373-1:2002 &sect;6.3</span></div><div class="mc-cross-axis-grid">${combined.crossAxisFindings.map(f=>`<div class="mc-cross-card"><div class="mc-cross-loc">${f.location}</div><div class="mc-cross-axes">${f.axes.join(' + ')} axes</div><div class="mc-cross-name">${f.rule.label}</div><div class="mc-cross-pct">${f.boostedPct.toFixed(0)}% <span class="mc-boost-tag">+${f.rule.boostPct}% boosted</span></div><div class="mc-cross-note">${f.rule.note}</div><div class="mc-iso-ref">${f.rule.clause}</div></div>`).join('')}</div>`:''}
 
+    ${ok.length ? `
     <div class="mc-charts-row" style="grid-template-columns:1fr;">
       <div class="mc-chart-card" style="grid-column:1/-1;">
         <div class="mc-chart-header" style="flex-wrap:wrap;gap:8px;align-items:center;">
@@ -535,11 +792,14 @@ function mcRenderResults(channelResults, combined, filename) {
           </div>
         </div>
       </div>
-    </div>
+    </div>` : `<div class="mc-section-header"><span>No vibration channels configured — charts unavailable</span></div>`}
 
     <div class="mc-section-header"><span>&#128312; Per-Channel Breakdown</span><span class="mc-section-clause">Independent pipeline per axis</span></div>
     <div class="mc-channels-grid">
-      ${channelResults.map((ch,i)=>{const col=MC_CH_COLORS[i]||MC_CH_COLORS[0];return ch.error?`<div class="mc-ch-card mc-ch-error" style="border-left:3px solid ${col.line}"><div class="mc-ch-card-header"><span class="mc-ch-loc">${ch.location}</span><span class="mc-ch-axis">${ch.axis}</span></div><div class="mc-ch-col">${ch.col}</div><div style="color:var(--red);font-size:11px;margin-top:6px;">&#10007; ${ch.error}</div></div>`:`<div class="mc-ch-card" style="border-left:3px solid ${col.line}"><div class="mc-ch-card-header"><div class="mc-ch-color-dot" style="background:${col.line}"></div><span class="mc-ch-loc">${ch.location}</span><span class="mc-ch-axis">${ch.axis}</span><span class="mc-ch-zone" style="color:${zoneColors[ch.zoneRow?.zone_label]||'#888'}">Zone ${ch.zoneRow?.zone_label||'?'}</span></div><div class="mc-ch-col">${ch.col}</div><div class="mc-ch-metrics"><div class="mc-ch-met"><div class="mc-ch-met-val">${ch.rms}</div><div class="mc-ch-met-lbl">RMS mm/s</div></div><div class="mc-ch-met"><div class="mc-ch-met-val">${ch.cf}</div><div class="mc-ch-met-lbl">Crest F.</div></div><div class="mc-ch-met"><div class="mc-ch-met-val">${ch.kurt}</div><div class="mc-ch-met-lbl">Kurtosis</div></div><div class="mc-ch-met"><div class="mc-ch-met-val" style="color:${hiColor(ch.healthIdx)}">${ch.healthIdx}</div><div class="mc-ch-met-lbl">Health</div></div></div><div class="mc-ch-faults">${(ch.faults||[]).filter(f=>!f.locked&&f.pct>=(window.CONFIG?.minimum_fault_confidence_pct||10)).slice(0,3).map(f=>`<div class="mc-ch-fault-row"><span class="mc-ch-fault-name">${f.name}</span><div class="mc-ch-fault-bar"><div style="width:${f.pct}%;background:${window.faultIndicatorColor?window.faultIndicatorColor(f.pct):'#f59e0b'}"></div></div><span class="mc-ch-fault-pct">${f.pct.toFixed(0)}%</span></div>`).join('')||'<div style="font-size:10px;color:var(--muted);margin-top:4px;">No significant faults detected</div>'}</div><div class="mc-ch-rul">RUL: <strong>${ch.rulR?.days??'&mdash;'}d</strong> &plusmn;${ch.rulR?.ci??'&mdash;'}d &middot; ${ch.trendRow?.code||'DDU'}</div></div>`;}).join('')}
+      ${ok.map((ch,i)=>{const col=MC_CH_COLORS[i]||MC_CH_COLORS[0];return`<div class="mc-ch-card" style="border-left:3px solid ${col.line}"><div class="mc-ch-card-header"><div class="mc-ch-color-dot" style="background:${col.line}"></div><span class="mc-ch-loc">${ch.location}</span><span class="mc-ch-axis">${ch.axis}</span><span class="mc-ch-zone" style="color:${zoneColors[ch.zoneRow?.zone_label]||'#888'}">Zone ${ch.zoneRow?.zone_label||'?'}</span></div><div class="mc-ch-col">${ch.col}</div><div class="mc-ch-metrics"><div class="mc-ch-met"><div class="mc-ch-met-val">${ch.rms}</div><div class="mc-ch-met-lbl">RMS mm/s</div></div><div class="mc-ch-met"><div class="mc-ch-met-val">${ch.cf}</div><div class="mc-ch-met-lbl">Crest F.</div></div><div class="mc-ch-met"><div class="mc-ch-met-val">${ch.kurt}</div><div class="mc-ch-met-lbl">Kurtosis</div></div><div class="mc-ch-met"><div class="mc-ch-met-val" style="color:${hiColor(ch.healthIdx)}">${ch.healthIdx}</div><div class="mc-ch-met-lbl">Health</div></div></div><div class="mc-ch-faults">${(ch.faults||[]).filter(f=>!f.locked&&f.pct>=(window.CONFIG?.minimum_fault_confidence_pct||10)).slice(0,3).map(f=>`<div class="mc-ch-fault-row"><span class="mc-ch-fault-name">${f.name}</span><div class="mc-ch-fault-bar"><div style="width:${f.pct}%;background:${window.faultIndicatorColor?window.faultIndicatorColor(f.pct):'#f59e0b'}"></div></div><span class="mc-ch-fault-pct">${f.pct.toFixed(0)}%</span></div>`).join('')||'<div style="font-size:10px;color:var(--muted);margin-top:4px;">No significant faults detected</div>'}</div><div class="mc-ch-rul">RUL: <strong>${ch.rulR?.days??'&mdash;'}d</strong> &plusmn;${ch.rulR?.ci??'&mdash;'}d &middot; ${ch.trendRow?.code||'DDU'}</div></div>`;}).join('')}
+      ${channelResults.filter(r=>r.error&&r.type==='vibration').map(ch=>`<div class="mc-ch-card mc-ch-error"><div class="mc-ch-card-header"><span class="mc-ch-loc">${ch.location}</span><span class="mc-ch-axis">${ch.axis}</span></div><div class="mc-ch-col">${ch.col}</div><div style="color:var(--red);font-size:11px;margin-top:6px;">&#10007; ${ch.error}</div></div>`).join('')}
+      ${thresholds.map(t=>`<div class="mc-ch-card" style="border-left:3px solid ${t.alert?'#ef4444':'#22c55e'}"><div class="mc-ch-card-header"><div class="mc-ch-color-dot" style="background:${t.alert?'#ef4444':'#22c55e'}"></div><span class="mc-ch-loc">${t.location}</span><span class="mc-ch-axis">${t.label}</span><span class="mc-ch-zone" style="color:${t.alert?'#ef4444':'#22c55e'}">${t.alert?'ALERT':'OK'}</span></div><div class="mc-ch-col">${t.col}</div><div class="mc-ch-metrics"><div class="mc-ch-met"><div class="mc-ch-met-val" style="color:${t.alert?'#ef4444':'inherit'}">${typeof t.value==='number'?t.value.toFixed(1):t.value}</div><div class="mc-ch-met-lbl">Reading</div></div><div class="mc-ch-met"><div class="mc-ch-met-val">${t.direction==='below'?'&le;':'&ge;'} ${t.thresholdValue}</div><div class="mc-ch-met-lbl">Limit</div></div></div><div style="font-size:10px;color:var(--muted);margin-top:6px;">Threshold alert only — no fault classification for this channel type</div></div>`).join('')}
+      ${thresholdErrors.map(t=>`<div class="mc-ch-card mc-ch-error"><div class="mc-ch-card-header"><span class="mc-ch-loc">${t.location}</span><span class="mc-ch-axis">${t.label}</span></div><div class="mc-ch-col">${t.col}</div><div style="color:var(--red);font-size:11px;margin-top:6px;">&#10007; ${t.error}</div></div>`).join('')}
     </div>
 
     <div class="mc-ai-section" id="mc-ai-section">
@@ -555,7 +815,7 @@ function mcRenderResults(channelResults, combined, filename) {
     </div>
   `;
 
-  // Reset tab state and build tabs + charts
+  // Reset tab state and build tabs + charts — vibration channels only
   mcActiveChIdx = -1;
   requestAnimationFrame(() => {
     mcBuildChartTabs(ok);
@@ -775,21 +1035,28 @@ async function mcStreamClaude(channelResults, combined, filename) {
 
   const WORKER_URL = 'https://restless-tree-eac8.kairosventure-io.workers.dev';
 
-  // Build a compact prompt
-  const chSummary = channelResults.filter(r => !r.error).map(ch =>
+  // Build a compact prompt — vibration channels drive fault/zone data
+  const ok = channelResults.filter(r => !r.error && r.type === 'vibration');
+  const thresholds = channelResults.filter(r => r.type === 'threshold' && !r.error);
+
+  const chSummary = ok.map(ch =>
     `  • ${ch.location} (${ch.axis}): Zone ${ch.zoneRow?.zone_label}, RMS=${ch.rms} mm/s, CF=${ch.cf}, Kurt=${ch.kurt}, HI=${ch.healthIdx}, Top fault: ${(ch.faults||[]).find(f=>!f.locked)?.name || 'None'} (${(ch.faults||[]).find(f=>!f.locked)?.pct?.toFixed(0)||0}%)`
-  ).join('\n');
+  ).join('\n') || '  None.';
+
+  const thresholdSummary = thresholds.map(t =>
+    `  • ${t.location} (${t.label}): reading ${typeof t.value==='number'?t.value.toFixed(1):t.value}, limit ${t.direction==='below'?'≥ ':'≤ '}${t.thresholdValue} — ${t.alert ? 'ALERT (limit exceeded)' : 'OK'}`
+  ).join('\n') || '  None configured.';
 
   const crossSummary = (combined?.crossAxisFindings || []).map(f =>
     `  • ${f.rule.label} at ${f.location} (${f.axes.join('+')}): ${f.boostedPct.toFixed(0)}% confidence [${f.rule.clause}]`
   ).join('\n');
 
   // Build diagnostic flags — same policy as single-channel
-  const ok = channelResults.filter(r => !r.error);
-  const topFaultPct = Math.max(...ok.map(ch => (ch.faults||[]).find(f=>!f.locked)?.pct || 0));
+  const topFaultPct = ok.length ? Math.max(...ok.map(ch => (ch.faults||[]).find(f=>!f.locked)?.pct || 0)) : 0;
   const crossMaxPct = Math.max(...(combined?.crossAxisFindings||[]).map(f => f.boostedPct), 0);
   const rmsZone = combined?.worstZoneRMS || combined?.worstZone;  // use pre-override RMS zone
   const displayZone = combined?.worstZone;
+  const thresholdAlerts = thresholds.filter(t => t.alert);
   const flags = [];
 
   if (combined?.zoneOverrideReason) {
@@ -798,19 +1065,25 @@ async function mcStreamClaude(channelResults, combined, filename) {
   if ((rmsZone === 'A' || rmsZone === 'B') && (topFaultPct >= 40 || crossMaxPct >= 40)) {
     flags.push('EARLY_WARNING: RMS is low but fault confidence is significant. FORBIDDEN: do not use words like "excellent", "optimal", "normal operation", or "no immediate action". Fault indicators require scheduled intervention per ISO 13373-1:2002 §6.3.');
   }
-  if (topFaultPct < 40 && crossMaxPct < 40) {
+  if (ok.length && topFaultPct < 40 && crossMaxPct < 40) {
     flags.push('LOW_CONFIDENCE: Top fault below 40% — use indicative language only.');
   }
   if (crossMaxPct >= 60) {
     flags.push('CROSS_AXIS_CONFIRMED: Cross-axis fault confidence ≥60% — this is a CONFIRMED fault, not indicative. Report it as requiring corrective action.');
   }
+  if (thresholdAlerts.length) {
+    flags.push(`THRESHOLD_ALERT: ${thresholdAlerts.length} threshold channel(s) exceeded their configured limit (see threshold data below). Mention this explicitly — it is a separate finding from vibration fault classification, not folded into the zone/health assessment.`);
+  }
 
   const prompt = `You are AxiomAssist — an ISO-certified vibration analyst. Provide a concise multi-channel diagnostic summary (3 paragraphs).
 
-File: ${filename} | Channels: ${ok.length} | Displayed Zone: ${displayZone} | RMS Zone: ${rmsZone} | Combined Health: ${combined?.healthIdx} | Min RUL: ${combined?.minRUL}d
+File: ${filename} | Vibration channels: ${ok.length} | Threshold channels: ${thresholds.length} | Displayed Zone: ${displayZone ?? 'N/A (no vibration channels)'} | RMS Zone: ${rmsZone ?? 'N/A'} | Combined Health: ${combined?.healthIdx ?? 'N/A'} | Min RUL: ${combined?.minRUL ?? 'N/A'}d
 
-Per-channel data:
+Per-channel vibration data:
 ${chSummary}
+
+Threshold-alert channels (temperature/proximity/etc. — simple limit check, not fault-classified):
+${thresholdSummary}
 
 Cross-axis confirmed faults (ISO 13373-1):
 ${crossSummary || '  None confirmed.'}
@@ -819,11 +1092,12 @@ ${crossSummary || '  None confirmed.'}
 ${flags.length ? flags.map(f => '(!) ' + f).join('\n') : '  No flags.'}
 
 === RULES ===
-1. Base your condition assessment on the DISPLAYED ZONE (${displayZone}), not the RMS zone.
+1. Base your condition assessment on the DISPLAYED ZONE (${displayZone ?? 'N/A'}), not the RMS zone. If there are no vibration channels, say so plainly rather than inventing a zone assessment.
 2. If cross-axis faults are confirmed at ≥40%, they are a priority finding — not optional.
 3. FORBIDDEN words when EARLY_WARNING or ZONE_OVERRIDE_ACTIVE flag is set: "excellent", "optimal", "no immediate action", "continued operation without intervention", "normal operation".
 4. Use indicative language only for faults below 40% confidence.
-5. Always cite ISO standards. Paragraph 1: condition + zone assessment. Paragraph 2: cross-axis interpretation. Paragraph 3: inspection priority.`;
+5. Threshold-channel alerts are a distinct finding from vibration fault classification — report them separately, don't merge them into the zone assessment.
+6. Always cite ISO standards where applicable. Paragraph 1: vibration condition + zone assessment. Paragraph 2: cross-axis interpretation + threshold-alert findings. Paragraph 3: inspection priority.`;
 
   try {
     bodyEl.innerHTML = '<span style="color:var(--muted)">Connecting to AI…</span>';
@@ -903,14 +1177,11 @@ window.mcSetEnabled = function(enabled) {
     ? '&#9889; Run Multi-Channel Analysis'
     : '&#9889; Run Analysis';
   // If enabling manually and we have raw data, re-run file ready to populate mapping
-  if (enabled && MC.rawData) {
-    const sigCols = mcDetectSignalColumns(window._lastParsedResult || {});
-    if (sigCols.length > 0) {
-      mcRenderMappingUI(sigCols);
-    } else if (MC.mapping.length === 0 && window._lastParsedResult) {
-      // Fallback: detect from last parsed result allHeaders
-      const headers = window._lastParsedResult.allHeaders || [window._lastParsedResult.colName].filter(Boolean);
-      if (headers.length > 0) mcRenderMappingUI(headers);
+  if (enabled && MC.rawData && window._lastParsedResult) {
+    const sigCols = mcDetectSignalColumns(window._lastParsedResult);
+    const assignable = mcGetAssignableColumns(window._lastParsedResult);
+    if (assignable.length > 0) {
+      mcRenderMappingUI(sigCols, window._lastParsedResult);
     }
   }
 };
@@ -931,7 +1202,7 @@ window.mcActivate = function(columns) {
   // Enable the toggle in step 2
   const toggle = document.getElementById('mc-mode-toggle');
   if (toggle) { toggle.checked = true; mcSetEnabled(true); }
-  mcRenderMappingUI(columns);
+  mcRenderMappingUI(columns, window._lastParsedResult || {});
   // Scroll to mapping
   const ms = document.getElementById('mc-mapping-section');
   if (ms) ms.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -940,12 +1211,16 @@ window.mcActivate = function(columns) {
 // ── Called by modified stageFile after file is read ───────────
 window.mcOnFileReady = function(raw, parsedResult) {
   MC.rawData = raw;
+  window._lastParsedResult = parsedResult; // was never set before — mcSetEnabled's re-render path relies on it
   const sigCols = mcDetectSignalColumns(parsedResult);
-  // Always populate mapping for all detected columns
-  if (sigCols.length > 0) {
-    mcRenderMappingUI(sigCols);
+  const assignable = mcGetAssignableColumns(parsedResult);
+  // Populate mapping whenever there's at least one assignable column — not just
+  // vibration-looking ones, since a lone vibration channel + a temperature/proximity
+  // channel is a legitimate 2-channel setup even though sigCols.length would be 1.
+  if (assignable.length > 0) {
+    mcRenderMappingUI(sigCols, parsedResult);
   }
-  if (sigCols.length > 1) {
+  if (assignable.length > 1) {
     // Auto-enable multi-channel — no user action needed
     MC.enabled = true;
     const toggle = document.getElementById('mc-mode-toggle');
@@ -956,7 +1231,7 @@ window.mcOnFileReady = function(raw, parsedResult) {
     const el = document.getElementById('multiChannelSuggestion');
     if (el) {
       el.style.display = 'flex';
-      el.innerHTML = '<span>&#128290; <strong>' + sigCols.length + ' signal columns detected</strong> — running multi-channel analysis automatically</span>';
+      el.innerHTML = '<span>&#128290; <strong>' + assignable.length + ' channels detected</strong> — running multi-channel analysis automatically</span>';
     }
   } else {
     // Single channel — normal mode
