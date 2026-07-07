@@ -180,6 +180,11 @@ main{padding-top:160px;position:relative;z-index:1;}
 .data-banner-mcsa{background:rgba(10,124,79,0.07);border:1px solid rgba(10,124,79,0.2);color:var(--green);}
 .data-banner-combined{background:rgba(107,63,160,0.07);border:1px solid rgba(107,63,160,0.2);color:var(--purple);}
 .data-banner-power{background:rgba(179,106,0,0.07);border:1px solid rgba(179,106,0,0.2);color:var(--yellow);}
+/* A12: assumed-sample-rate report flag. Deliberately a SEPARATE class from .data-banner
+   (not .data-banner-*) so it is unaffected by the print stylesheet's blanket
+   ".data-banner{display:none}" rule — this flag must survive to printed/exported reports. */
+.sample-rate-banner{display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-family:'IBM Plex Sans',sans-serif;font-size:12px;line-height:1.5;gap:10px;align-items:flex-start;background:rgba(179,106,0,0.09);border:1px solid rgba(179,106,0,0.35);color:var(--orange);font-weight:500;}
+.param-input.input-required{border-color:var(--orange) !important;box-shadow:0 0 0 2px rgba(179,106,0,0.15);}
 /* Locked fault rows */
 .fault-locked{opacity:0.5;}
 .fault-locked .fault-name{font-style:italic;}
@@ -642,11 +647,25 @@ main{padding-top:160px;position:relative;z-index:1;}
             <input class="param-input" id="p-rpm" type="number" placeholder="e.g. 1480" min="100" max="50000" oninput="onParamChange()">
           </div>
         </div>
-        <!-- Sampling rate -->
+        <!-- Sampling rate — A12: no silent default. Auto-detected from file (header or
+             timestamp column) when possible; otherwise this is a required field before
+             analysis can run, with a preset dropdown fallback that carries a visible
+             "assumed input" flag on the report. -->
         <div class="param-group">
-          <div class="param-label">Sampling Rate (Hz) <span>From your analyser settings — default 12000</span></div>
-          <input class="param-input" id="p-sample-rate" type="number" placeholder="e.g. 12000" min="100" max="100000" oninput="onParamChange()">
-          <div style="font-size:9px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:2px;">Common: 3000 (Epson) · 12000 (CWRU) · 25600 (XJTU) · Auto-detected if time column present</div>
+          <div class="param-label">Sampling Rate (Hz) <span>From your acquisition device / analyser export settings or CSV header — NOT the motor nameplate</span></div>
+          <input class="param-input" id="p-sample-rate" type="number" placeholder="e.g. 12000 — enter the exact rate if known" min="100" max="500000" oninput="onParamChange()">
+          <div id="sample-rate-required-note" style="display:none;font-size:10px;color:var(--orange);font-family:'IBM Plex Mono',monospace;margin-top:4px;font-weight:600;">⚠ Required — no sample rate was found in the file. Enter the exact rate above, or pick the closest preset below.</div>
+          <div style="font-size:9px;color:var(--muted);font-family:'IBM Plex Mono',monospace;margin-top:4px;">Auto-detected from file header or timestamp column when present. Common exact rates: 3000 (Epson) · 12000 / 48000 (CWRU) · 25600 (XJTU).</div>
+          <div style="margin-top:8px;">
+            <div class="param-label" style="font-size:10px;">Don't have an exact value? Select by analysis intent (Fmax) <span>Derives rate at 2.56× Fmax — this will be flagged as an assumed input on the report</span></div>
+            <select class="param-select" id="p-sample-rate-preset" onchange="onParamChange()">
+              <option value="">-- No preset selected --</option>
+              <option value="2560">Overall / low-speed — Fmax 1 kHz → 2.56 kHz</option>
+              <option value="12800">General + shaft faults — Fmax 5 kHz → 12.8 kHz</option>
+              <option value="25600">Bearing faults (default) — Fmax 10 kHz → 25.6 kHz</option>
+              <option value="51200">Bearing/gear, high-freq — Fmax 20 kHz → 51.2 kHz</option>
+            </select>
+          </div>
         </div>
         <!-- Row 2: Bearing model -->
         <div class="param-group">
@@ -774,6 +793,7 @@ main{padding-top:160px;position:relative;z-index:1;}
   <div id="single-channel-results">
   <div class="ew-banner" id="ew-banner"><div style="font-size:18px;flex-shrink:0;">&#9889;</div><div><div class="ew-title">Early Warning — Pre-Zone Breach Alert</div><div class="ew-desc" id="ew-desc">—</div><div style="margin-top:4px;" id="ew-clause"></div></div></div>
   <div class="data-banner" id="data-type-banner">&#128268; —</div>
+  <div class="sample-rate-banner" id="sample-rate-banner"></div>
 
   <!-- MANAGEMENT SUMMARY CARD -->
   <div id="mgmt-card" class="mgmt-card green" style="display:none;">

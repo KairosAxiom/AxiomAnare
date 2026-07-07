@@ -784,9 +784,21 @@ function readMachineParams() {
   // Measurement date — user-entered or today
   const measDateEl = document.getElementById('p-meas-date');
   params.measDate = (measDateEl && measDateEl.value) ? measDateEl.value : new Date().toISOString().split('T')[0];
-  // Sampling rate — user declared or auto-detected from file
+  // Sampling rate — A12: hand-keyed exact value takes priority over dropdown preset.
+  // sampleRateIsPreset distinguishes "user typed a real number" (unflagged) from
+  // "user picked an Fmax-keyed preset because they didn't have an exact value" (flagged).
   const srEl = document.getElementById('p-sample-rate');
-  params.declaredSampleRate = (srEl && srEl.value) ? parseInt(srEl.value) : null;
+  const srPresetEl = document.getElementById('p-sample-rate-preset');
+  if (srEl && srEl.value) {
+    params.declaredSampleRate = parseInt(srEl.value);
+    params.sampleRateIsPreset = false;
+  } else if (srPresetEl && srPresetEl.value) {
+    params.declaredSampleRate = parseInt(srPresetEl.value);
+    params.sampleRateIsPreset = true;
+  } else {
+    params.declaredSampleRate = null;
+    params.sampleRateIsPreset = false;
+  }
   params.loadZonePosition = 'centered';
 
   return params;
@@ -813,6 +825,20 @@ window.onBaselineToggle = function() {
   if (chk) chk.textContent = isBaselineUpload ? '✓' : '';
 };
 
+// A12: called by runPipeline when no sample rate is available from any source
+// (not hand-keyed, not header/timestamp-detected, no preset chosen). Opens Step 2 and
+// marks the sample-rate field as required so the run can be retried once it's filled in.
+window.requireSampleRateInput = function() {
+  const form = document.getElementById('param-form');
+  if (form && !form.classList.contains('open')) { if (typeof toggleParams==='function') toggleParams(); }
+  const srEl = document.getElementById('p-sample-rate');
+  const srReq = document.getElementById('sample-rate-required-note');
+  if (srEl) { srEl.classList.add('input-required'); srEl.focus(); }
+  if (srReq) srReq.style.display = 'block';
+  const card = document.getElementById('step2-card');
+  if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+};
+
 window.onParamChange = function() {
   // Show accuracy indicator when RPM is entered
   const rpm  = parseFloat(document.getElementById('p-rpm')?.value || 0);
@@ -820,6 +846,14 @@ window.onParamChange = function() {
   if (accEl) accEl.style.display = rpm > 0 ? 'flex' : 'none';
   // Update step 2 done indicator
   if (rpm > 0) setStepDone('step2-num', true);
+  // A12: clear the required-field warning once a sample rate is entered (typed or preset)
+  const srEl = document.getElementById('p-sample-rate');
+  const srPresetEl = document.getElementById('p-sample-rate-preset');
+  const srReq = document.getElementById('sample-rate-required-note');
+  if ((srEl && srEl.value) || (srPresetEl && srPresetEl.value)) {
+    if (srEl) srEl.classList.remove('input-required');
+    if (srReq) srReq.style.display = 'none';
+  }
 };
 
 window.onBearingInput = function(val) {
@@ -956,8 +990,34 @@ async function runPipeline(raw, filename) {
   }
   if (!parsed || parsed.values.length < 10) { doneStage(1,'QUARANTINED'); setNote('(!) Cannot extract numeric data.'); return; }
   const cu = CONFIG.unit_conversion_factors.find(r => r.canonical_flag === 1).to_unit;
-  // Sampling rate priority: user declaration > auto-detected from file > CONFIG default
-  const sr = machineParams.declaredSampleRate || parsed.sampleRate || CONFIG.default_sample_rate_hz;
+
+  // == A12: sample-rate resolution — no silent default ==
+  // Priority: user hand-keyed exact value > auto-detected from file (header/timestamp) >
+  // user-selected Fmax dropdown preset. If NONE of these are available, this is NOT filled
+  // with CONFIG.default_sample_rate_hz — the run is quarantined and the UI is asked to
+  // collect a value (required field / dropdown) before analysis can proceed.
+  // srSource values: 'declared' (hand-keyed, unflagged) | 'header' | 'timestamp'
+  //                  (auto-detected, unflagged) | 'preset' (dropdown, FLAGGED) | null (missing)
+  let sr, srSource;
+  if (machineParams.declaredSampleRate && !machineParams.sampleRateIsPreset) {
+    sr = machineParams.declaredSampleRate; srSource = 'declared';
+  } else if (parsed.sampleRate && parsed.sampleRateSource) {
+    sr = parsed.sampleRate; srSource = parsed.sampleRateSource;
+  } else if (machineParams.declaredSampleRate && machineParams.sampleRateIsPreset) {
+    sr = machineParams.declaredSampleRate; srSource = 'preset';
+  } else {
+    sr = null; srSource = null;
+  }
+  if (!sr) {
+    doneStage(1,'QUARANTINED');
+    setNote('(!) Sample rate required — not found in file and not provided. Enter it in Step 2 (Sampling Rate field or Fmax preset) before running analysis.');
+    if (typeof requireSampleRateInput === 'function') requireSampleRateInput();
+    return;
+  }
+  // A12 flag: any run on a non-detected, non-hand-keyed value carries a visible,
+  // report-level "assumed input" flag — the dropdown makes the assumption chosen and
+  // visible rather than silent, but the report must still say so.
+  const sampleRateAssumed = (srSource === 'preset');
   // Detect what type of data we have from column headers
   const dataTypes = detectDataTypes(parsed.allHeaders || [parsed.colName]);
   const dataBanner = getDataTypeBanner(dataTypes);
@@ -982,7 +1042,8 @@ async function runPipeline(raw, filename) {
   // Spectral velocity RMS for ISO zone — ISO 10816-3:2009 §4.2
   // accelToVelocityRMS integrates FFT mags over 10-1000Hz band: v(f)=a(f)/(2pi*f)
   const spectralVelRMS = isAccel ? accelToVelocityRMS(detrendedRaw, sr, parsed.unit) : null;
-  doneStage(1, vals.length+' samples . '+parsed.unit+(isAccel?' (spectral vel integration)':'->')+cu+' . '+sr+'Hz');
+  const srTag = srSource==='declared' ? '(entered)' : srSource==='preset' ? '(assumed — preset)' : '('+srSource+')';
+  doneStage(1, vals.length+' samples . '+parsed.unit+(isAccel?' (spectral vel integration)':'->')+cu+' . '+sr+'Hz '+srTag);
 
   // Stage 2  -  Baseline Comparison
   await activateStage(2);
@@ -1127,12 +1188,19 @@ async function runPipeline(raw, filename) {
     classRow
   );
 
+  // A12: sample-rate provenance banner — same {type,msg} pattern as dataBanner.
+  // Only the 'preset' (dropdown) path is flagged; 'declared' and detected values are not,
+  // per A12's resolution: an assumption is only "assumed" when it wasn't measured or exact.
+  const sampleRateBanner = sampleRateAssumed
+    ? { type:'assumed', msg:'Assumed input — sample rate ('+sr+' Hz) was not detected in the file or hand-entered; it is a preset selected for analysis intent. Dependent frequency citations (BPFO/BPFI/BSF/FTF, shaft frequency) are unverified until a real sample rate is confirmed.' }
+    : null;
+
   nvr = { filename, rms: rms.toFixed(3), peak: peak.toFixed(3), cf: cf.toFixed(2),
     dataTypes, dataBanner,
     kurt: kurt.toFixed(2), devSc: devSc.toFixed(2), devRow,
     zoneRow: finalZoneRow, trendRow,
     earlyWarn, faults: faults.length ? faults : allFaults.slice(0, CONFIG.fault_display_limit),
-    fftR, rulR: finalRulR, n, sr, classRow, cu, shaftHz,
+    fftR, rulR: finalRulR, n, sr, srSource, sampleRateAssumed, sampleRateBanner, classRow, cu, shaftHz,
     override, healthIdx,
     singleFile: history.length < 3,
     historyCount: history.length,
@@ -1323,11 +1391,65 @@ function parseData(raw) {
   else if (cl.includes('m/s2')||cl.includes('ms2')) unit='m/s2';
   else if (cl.includes('mg')&&!cl.includes('img')) unit='mg';
   // acceleration_g, accel, acc, g -> stay as 'g'
-  let sr = CONFIG.default_sample_rate_hz;
-  const tc = headers.find(h=>tsN.some(p=>h.toLowerCase()===p||h.toLowerCase().startsWith(p)));
-  if (tc) { const ts=rows.slice(0,10).map(r=>parseFloat(r[tc])).filter(isFinite); if(ts.length>2){const dt=ts[1]-ts[0];if(dt>0&&dt<1)sr=Math.round(1/dt);else if(dt>=1&&dt<1000)sr=Math.round(1000/dt);} }
-  return { values, colName: col, unit, sampleRate: sr, allHeaders: headers };
+
+  // == A12: sample-rate auto-detect — no silent default ==
+  // Shared with the multi-channel pipeline (see multiChannel.js) via
+  // window.detectSampleRateFromRows, so both paths use one detection strategy.
+  const { sampleRate: sr, sampleRateSource: srSource } = window.detectSampleRateFromRows(headers, rows, tsN);
+
+  return { values, colName: col, unit, sampleRate: sr, sampleRateSource: srSource, allHeaders: headers };
 }
+
+// == A12: shared sample-rate detection — single source of truth ==
+// Used by parseData() (single-channel) and runMultiChannelPipeline() (multi-channel).
+// Resolution order: (a) header/field name match, (b) timestamp-column median delta.
+// NEVER falls back to CONFIG.default_sample_rate_hz here; that decision belongs to the
+// prompt/dropdown layer (runPipeline / runMultiChannelPipeline), not the detector.
+window.detectSampleRateFromRows = function(headers, rows, tsN) {
+  tsN = tsN || ['time','timestamp','t','date','seconds','ms','index','sample','i','n'];
+  let sr = null, srSource = null;
+
+  // Strategy (a): header/field name match — common exported metadata column names.
+  // Looks for a numeric column carrying a constant (or near-constant) value under one
+  // of these names — i.e. the file repeats its own acquisition rate per row, which some
+  // analyser exports do (distinct from a genuine per-row timestamp/signal column).
+  const srNames = ['sample_rate','samplerate','fs','sampling_frequency','samplingfrequency'];
+  const srCol = headers.find(h => srNames.includes(h.toLowerCase().replace(/[\s]/g,'')));
+  if (srCol) {
+    const srVals = rows.slice(0,20).map(r=>parseFloat(r[srCol])).filter(isFinite);
+    if (srVals.length) {
+      const first = srVals[0];
+      // Require near-constant value (metadata columns don't vary row to row) and a
+      // plausible acquisition-rate magnitude, else this isn't really a sample-rate field.
+      if (srVals.every(v=>Math.abs(v-first) < first*0.001) && first >= 100 && first <= 500000) {
+        sr = Math.round(first); srSource = 'header';
+      }
+    }
+  }
+
+  // Strategy (b): timestamp column → fs = 1 / median(Δt). Median (not mean, not a single
+  // two-row delta) so a handful of irregular/duplicated rows don't skew the estimate.
+  if (!sr) {
+    const tc = headers.find(h=>tsN.some(p=>h.toLowerCase()===p||h.toLowerCase().startsWith(p)));
+    if (tc) {
+      const ts = rows.slice(0,50).map(r=>parseFloat(r[tc])).filter(isFinite);
+      if (ts.length > 5) {
+        const deltas = [];
+        for (let i=1;i<ts.length;i++){ const d=ts[i]-ts[i-1]; if (isFinite(d) && d>0) deltas.push(d); }
+        if (deltas.length >= 3) {
+          const sorted = deltas.slice().sort((a,b)=>a-b);
+          const mid = Math.floor(sorted.length/2);
+          const medianDt = sorted.length%2 ? sorted[mid] : (sorted[mid-1]+sorted[mid])/2;
+          // Column may be in seconds (dt < 1) or milliseconds (dt >= 1, typically < 1000)
+          if (medianDt > 0 && medianDt < 1) { sr = Math.round(1/medianDt); srSource = 'timestamp'; }
+          else if (medianDt >= 1 && medianDt < 1000) { sr = Math.round(1000/medianDt); srSource = 'timestamp'; }
+        }
+      }
+    }
+  }
+
+  return { sampleRate: sr, sampleRateSource: srSource };
+};
 
 // == FFT ==
 function computeFFT(signal, fs) {
@@ -2308,6 +2430,18 @@ function renderResults(){
     bannerEl.textContent = d.dataBanner.msg;
     bannerEl.style.display = 'flex';
     bannerEl.className = 'data-banner data-banner-'+d.dataBanner.type;
+  }
+  // A12: assumed-sample-rate banner — separate element/class from data-banner so it is
+  // NOT caught by the print stylesheet's ".data-banner{display:none}" rule; this flag
+  // must remain visible on printed/exported reports, not just on screen.
+  const srBannerEl = document.getElementById('sample-rate-banner');
+  if (srBannerEl) {
+    if (d.sampleRateBanner) {
+      srBannerEl.textContent = '⚠ ' + d.sampleRateBanner.msg;
+      srBannerEl.style.display = 'flex';
+    } else {
+      srBannerEl.style.display = 'none';
+    }
   }
 
   // Fault bars  -  unlocked faults in colour, locked faults greyed with lock icon
