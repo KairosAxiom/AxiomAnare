@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 190" role="img" aria-labelledby="lxTitle lxDesc">
+  <title id="lxTitle">LynxEye</title>
+  <desc id="lxDesc">An open almond eye formed by two strokes, with two meshing gears turning inside, above the LynxEye wordmark.</desc>
+  <style>
+    @media (prefers-reduced-motion: reduce) { .lx-spin { animation: none !important; } }
+    .lx-g1 { transform-box: fill-box; transform-origin: center; animation: lxA 40s linear infinite; }
+    .lx-g2 { transform-box: fill-box; transform-origin: center; animation: lxB 40s linear infinite; }
+    @keyframes lxA { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes lxB { from { transform: rotate(22.5deg); } to { transform: rotate(-427.5deg); } }
+  </style>
+  <path d="M16,68 Q90,4 176,44" fill="none" stroke="#7bbde8" stroke-width="8" stroke-linecap="round"/>
+  <path d="M16,68 Q94,102 176,44" fill="none" stroke="#7bbde8" stroke-width="8" stroke-linecap="round"/>
+  <g transform="translate(92,48)">
+    <g class="lx-g1 lx-spin">
+      <path d="M9.00,0.00 L14.29,1.80 L13.95,3.58 L8.37,3.31 L7.28,5.29 L10.50,9.86 L9.18,11.10 L4.82,7.60 L2.78,8.56 L2.70,14.14 L0.90,14.37 L-0.57,8.98 L-2.78,8.56 L-6.13,13.03 L-7.72,12.16 L-5.74,6.93 L-7.28,5.29 L-12.62,6.94 L-13.39,5.30 L-8.72,2.24 L-9.00,0.00 L-14.29,-1.80 L-13.95,-3.58 L-8.37,-3.31 L-7.28,-5.29 L-10.50,-9.86 L-9.18,-11.10 L-4.82,-7.60 L-2.78,-8.56 L-2.70,-14.14 L-0.90,-14.37 L0.57,-8.98 L2.78,-8.56 L6.13,-13.03 L7.72,-12.16 L5.74,-6.93 L7.28,-5.29 L12.62,-6.94 L13.39,-5.30 L8.72,-2.24 Z" fill="#1f6fb2"/>
+      <circle r="5" fill="#faf8f3"/>
+    </g>
+    <g transform="translate(23.9,-2.8)">
+      <g class="lx-g2 lx-spin">
+        <path d="M6.60,0.00 L11.85,1.88 L11.41,3.71 L5.88,3.00 L4.67,4.67 L7.05,9.71 L5.45,10.69 L2.04,6.28 L0.00,6.60 L-1.88,11.85 L-3.71,11.41 L-3.00,5.88 L-4.67,4.67 L-9.71,7.05 L-10.69,5.45 L-6.28,2.04 L-6.60,0.00 L-11.85,-1.88 L-11.41,-3.71 L-5.88,-3.00 L-4.67,-4.67 L-7.05,-9.71 L-5.45,-10.69 L-2.04,-6.28 L-0.00,-6.60 L1.88,-11.85 L3.71,-11.41 L3.00,-5.88 L4.67,-4.67 L9.71,-7.05 L10.69,-5.45 L6.28,-2.04 Z" fill="#1f6fb2"/>
+        <circle r="4.5" fill="#faf8f3"/>
+      </g>
+    </g>
+  </g>
+  <text x="82" y="170" text-anchor="middle" font-family="'Barlow Condensed',sans-serif" font-size="52" font-weight="800" letter-spacing="-1"><tspan fill="#7bbde8">Lynx</tspan><tspan fill="#1f6fb2">Eye</tspan></text>
+</svg>

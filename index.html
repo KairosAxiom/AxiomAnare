@@ -1,11 +1,12 @@
 <!DOCTYPE html>
-<!-- AxiomAnare v2.1 - ASCII clean build -->
+<!-- LynxEye v2.1 - ASCII clean build -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AxiomAnare — Vibration Diagnostic Engine</title>
+<title>LynxEye — Vibration Diagnostic Engine</title>
+<link rel="icon" type="image/svg+xml" href="lynxeye-logo-static.svg">
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@700;800&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -318,7 +319,7 @@ main{padding-top:160px;position:relative;z-index:1;}
 @media print {
   /* ── Page setup ── */
   @page { size: A4 portrait; margin: 14mm 12mm 18mm 12mm; }
-  @page { @bottom-center { content: "AxiomAnare · AI-assisted diagnostic report · Not a certified engineering determination"; font-size: 7pt; color: #999; } }
+  @page { @bottom-center { content: "LynxEye · AI-assisted diagnostic report · Not a certified engineering determination"; font-size: 7pt; color: #999; } }
 
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
@@ -482,7 +483,7 @@ main{padding-top:160px;position:relative;z-index:1;}
 
   /* ── FIX 5: AI section footer disclaimer ── */
   #results-screen::after {
-    content: "AxiomAnare · AI-assisted diagnostic report · Not a certified engineering determination · " attr(data-filename);
+    content: "LynxEye · AI-assisted diagnostic report · Not a certified engineering determination · " attr(data-filename);
     display: block; font-family: 'IBM Plex Mono', monospace;
     font-size: 7pt; color: #999; border-top: 1px solid #ddd;
     padding-top: 6px; margin-top: 20px;
@@ -493,75 +494,29 @@ main{padding-top:160px;position:relative;z-index:1;}
 <body>
 <nav>
   <div class="logo" style="display:flex;align-items:center;gap:14px;">
-    <canvas id="nav-logo" width="680" height="520" style="width:108px;height:83px;display:block;flex-shrink:0;"></canvas>
+    <svg id="nav-logo" viewBox="0 0 200 120" style="width:108px;height:83px;display:block;flex-shrink:0;" role="img" aria-label="LynxEye">
+      <style>
+        @media (prefers-reduced-motion: reduce){.nl-s{animation:none !important;}}
+        .nl-g1{transform-box:fill-box;transform-origin:center;animation:nlA 40s linear infinite;}
+        .nl-g2{transform-box:fill-box;transform-origin:center;animation:nlB 40s linear infinite;}
+        @keyframes nlA{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes nlB{from{transform:rotate(22.5deg)}to{transform:rotate(-427.5deg)}}
+      </style>
+      <path d="M16,70 Q90,8 176,48" fill="none" stroke="#7bbde8" stroke-width="8" stroke-linecap="round"/>
+      <path d="M16,70 Q94,104 176,48" fill="none" stroke="#7bbde8" stroke-width="8" stroke-linecap="round"/>
+      <g transform="translate(94,50.5)">
+        <g class="nl-g1 nl-s"><path d="M9,0 L14.29,1.8 L13.95,3.58 L8.37,3.31 L7.28,5.29 L10.5,9.86 L9.18,11.1 L4.82,7.6 L2.78,8.56 L2.7,14.14 L0.9,14.37 L-0.57,8.98 L-2.78,8.56 L-6.13,13.03 L-7.72,12.16 L-5.74,6.93 L-7.28,5.29 L-12.62,6.94 L-13.39,5.3 L-8.72,2.24 L-9,0 L-14.29,-1.8 L-13.95,-3.58 L-8.37,-3.31 L-7.28,-5.29 L-10.5,-9.86 L-9.18,-11.1 L-4.82,-7.6 L-2.78,-8.56 L-2.7,-14.14 L-0.9,-14.37 L0.57,-8.98 L2.78,-8.56 L6.13,-13.03 L7.72,-12.16 L5.74,-6.93 L7.28,-5.29 L12.62,-6.94 L13.39,-5.3 L8.72,-2.24 Z" fill="#1f6fb2"/><circle r="5" fill="#faf8f3"/></g>
+        <g transform="translate(23.9,-2.8)"><g class="nl-g2 nl-s"><path d="M6.6,0 L11.85,1.88 L11.41,3.71 L5.88,3 L4.67,4.67 L7.05,9.71 L5.45,10.69 L2.04,6.28 L0,6.6 L-1.88,11.85 L-3.71,11.41 L-3,5.88 L-4.67,4.67 L-9.71,7.05 L-10.69,5.45 L-6.28,2.04 L-6.6,0 L-11.85,-1.88 L-11.41,-3.71 L-5.88,-3 L-4.67,-4.67 L-7.05,-9.71 L-5.45,-10.69 L-2.04,-6.28 L0,-6.6 L1.88,-11.85 L3.71,-11.41 L3,-5.88 L4.67,-4.67 L9.71,-7.05 L10.69,-5.45 L6.28,-2.04 Z" fill="#1f6fb2"/><circle r="4.5" fill="#faf8f3"/></g></g>
+      </g>
+    </svg>
     <div style="display:flex;flex-direction:column;gap:3px;min-width:0;">
       <div style="display:flex;align-items:baseline;gap:0;line-height:1;">
-        <span style="font-family:'Barlow Condensed',sans-serif;font-size:2.1rem;font-weight:800;letter-spacing:-.5px;color:#1f6fb2;">Axiom</span><span style="font-family:'Barlow Condensed',sans-serif;font-size:2.1rem;font-weight:800;letter-spacing:-.5px;color:#7bbde8;">Anare</span>
+        <span style="font-family:'Barlow Condensed',sans-serif;font-size:2.1rem;font-weight:800;letter-spacing:-.5px;color:#7bbde8;">Lynx</span><span style="font-family:'Barlow Condensed',sans-serif;font-size:2.1rem;font-weight:800;letter-spacing:-.5px;color:#1f6fb2;">Eye</span>
       </div>
       <div class="logo-tag1" style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#3a6a9a;letter-spacing:1.4px;white-space:nowrap;">AGNOSTIC · AUGMENTED DATA ANALYSING</div>
       <div class="logo-tag2" style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#5a8ab0;white-space:nowrap;">Condition monitoring for rotary motors &amp; pumps</div>
     </div>
   </div>
-  <script>
-  window.addEventListener('load', function(){
-    (function(){
-      var canvas=document.getElementById('nav-logo');
-      if(!canvas) return;
-      var ctx=canvas.getContext('2d');
-      var LG={cx:270,cy:270,tipR:102,rootR:76,teeth:16,a:0};
-      var TG={cx:394,cy:166,tipR:60,rootR:42,teeth:10,a:0};
-      var BG={cx:381,cy:402,tipR:70,rootR:52,teeth:12,a:0};
-      function drawGear(g){
-        var cx=g.cx,cy=g.cy,tipR=g.tipR,rootR=g.rootR,teeth=g.teeth,a=g.a;
-        ctx.save();ctx.translate(cx,cy);ctx.rotate(a);
-        var ta2=(Math.PI*2)/teeth,half=ta2*0.28;
-        for(var i=0;i<teeth;i++){
-          var ta=i*ta2;
-          ctx.beginPath();
-          ctx.moveTo(Math.cos(ta-half*1.3)*rootR,Math.sin(ta-half*1.3)*rootR);
-          ctx.lineTo(Math.cos(ta-half)*tipR,Math.sin(ta-half)*tipR);
-          ctx.arc(0,0,tipR,ta-half,ta+half);
-          ctx.lineTo(Math.cos(ta+half*1.3)*rootR,Math.sin(ta+half*1.3)*rootR);
-          ctx.arc(0,0,rootR,ta+half*1.3,ta-half*1.3,true);
-          ctx.closePath();ctx.fillStyle='#909090';ctx.fill();
-          ctx.strokeStyle='#6b6558';ctx.lineWidth=1.2;ctx.stroke();
-        }
-        ctx.beginPath();ctx.arc(0,0,rootR,0,Math.PI*2);ctx.fillStyle='#8a8374';ctx.fill();ctx.strokeStyle='#6b6558';ctx.lineWidth=1.5;ctx.stroke();
-        ctx.beginPath();ctx.arc(0,0,rootR*0.85,0,Math.PI*2);ctx.fillStyle='#A8A8A8';ctx.fill();
-        ctx.beginPath();ctx.arc(0,0,rootR*0.72,0,Math.PI*2);ctx.strokeStyle='#6b6558';ctx.lineWidth=2.5;ctx.stroke();
-        ctx.beginPath();ctx.arc(0,0,rootR*0.68,0,Math.PI*2);ctx.fillStyle='#989898';ctx.fill();
-        for(var h=0;h<4;h++){var ha=(h/4)*Math.PI*2;ctx.beginPath();ctx.arc(Math.cos(ha)*rootR*0.5,Math.sin(ha)*rootR*0.5,rootR*0.09,0,Math.PI*2);ctx.fillStyle='#505050';ctx.fill();}
-        ctx.beginPath();ctx.arc(0,0,rootR*0.22,0,Math.PI*2);ctx.fillStyle='#6b6558';ctx.fill();
-        ctx.beginPath();ctx.arc(0,0,rootR*0.12,0,Math.PI*2);ctx.fillStyle='#404040';ctx.fill();
-        ctx.beginPath();ctx.arc(0,0,rootR*0.05,0,Math.PI*2);ctx.fillStyle='#8a8374';ctx.fill();
-        ctx.restore();
-      }
-      function drawWave(t){
-        var cx=270,cy=270,r=74;
-        ctx.save();ctx.beginPath();ctx.arc(cx,cy,r,0,Math.PI*2);ctx.clip();
-        ctx.beginPath();var first=true;
-        for(var i=0;i<=200;i++){
-          var x=cx-r+2*r*(i/200),nx=(x-cx)/r,y=cy+Math.sin(nx*Math.PI*3+t)*30;
-          if(first){ctx.moveTo(x,y);first=false;}else ctx.lineTo(x,y);
-        }
-        ctx.strokeStyle='#00EE44';ctx.lineWidth=4;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor='#00FF44';ctx.shadowBlur=6;ctx.stroke();ctx.restore();
-      }
-      var rps=10/60,last=null,wt=0;
-      function frame(ts){
-        if(!last)last=ts;
-        var dt=Math.min((ts-last)/1000,0.05);last=ts;
-        LG.a-=2*Math.PI*rps*dt;
-        TG.a+=2*Math.PI*rps*dt*(16/10);
-        BG.a+=2*Math.PI*rps*dt*(16/12);
-        wt+=dt*3;
-        ctx.clearRect(0,0,680,520);
-        drawGear(LG);drawGear(TG);drawGear(BG);drawWave(wt);
-        requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-    })();
-  });
-  </script>
   <div class="nav-right">
     <div id="ax-free-badge" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);padding:4px 10px;border:1px solid rgba(21,128,61,0.3);border-radius:6px;background:rgba(21,128,61,0.07);display:none;cursor:pointer;" onclick="Freemium.showUpgradeModal('feature')"></div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -972,13 +927,13 @@ main{padding-top:160px;position:relative;z-index:1;}
   <!-- ROW 3: AI Recommendations -->
   <div class="card fade-in" style="animation-delay:0.3s;">
     <div class="card-header">
-      <div class="card-title">AI Diagnostic Recommendations — AxiomAssist</div>
+      <div class="card-title">AI Diagnostic Recommendations — LynxEye Assist</div>
       <div style="display:flex;gap:5px;"><span class="clause">ISO 13379-1</span><span class="clause">ISO 13381-1</span><span class="badge b-purple">Claude AI</span></div>
     </div>
     <div class="stream-thinking" id="stream-thinking"><div class="spinner"></div><span>Claude is analysing your data against ISO standards…</span></div>
     <div class="reco-text typing" id="reco-text"></div>
     <div class="disclaimer-box" id="disclaimer-box"></div>
-    <div class="disclaimer-last" id="print-disclaimer" style="display:none;">AxiomAnare &middot; AI-assisted diagnostic report &middot; Not a certified engineering determination</div>
+    <div class="disclaimer-last" id="print-disclaimer" style="display:none;">LynxEye &middot; AI-assisted diagnostic report &middot; Not a certified engineering determination</div>
   </div>
   </div><!-- /#single-channel-results -->
 </div>

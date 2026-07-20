@@ -1,12 +1,12 @@
-# AxiomAnare — Architecture
+# LynxEye — Architecture
 
 > Source of truth for how this project is built. Update when the project changes.
 > Companion files: STATUS.md (where we are), DEPLOY_CHECKLIST.md (after every push), DECISIONS.md (why + guardrails).
 
 **Company:** Kairos Ventures Pte Ltd
 **Product:** Vibration diagnostic engine + multi-tenant SaaS (auth, tiers, fleet dashboard)
-**Live:** https://esimconnect.github.io/AxiomAnare
-**Repo:** https://github.com/esimconnect/AxiomAnare (org: esimconnect)
+**Live:** https://kairosaxiom.github.io/AxiomAnare
+**Repo:** https://github.com/KairosAxiom/AxiomAnare (org: KairosAxiom)
 **Stable anchor:** tag `v1.0-stable` → commit `4ef5762`
 
 > ⚠️ `README.md` shows a stale/wrong live URL (`limykdavid-maker.github.io/axiomanare`). Fix it.
@@ -56,6 +56,18 @@ in a CONFIG object at the top of `app.js` — not hardcoded in logic. This makes
 rules enforceable (see DECISIONS A1) and lets standards be corrected in one place.
 Key values: `minimum_fault_confidence_pct: 8`; "Indicative" tier at score ≥ 20; vib-derived electrical
 cap = **19** (deliberately below Indicative — DECISIONS A4); mechanical cap = 10 when bearing BER exceeds threshold.
+
+**Planned addition — DATA_QUALITY block (see §12, DECISIONS A10):**
+```javascript
+DATA_QUALITY: {
+  min_sample_rate_ratio_high: 20,   // sample rate must be >=20x shaft freq for High
+  min_sample_rate_ratio_medium: 10, // >=10x for Medium; below -> Low
+  min_revolutions_high: 50,         // capture must span >=50 shaft revolutions for High
+  min_revolutions_medium: 20,       // below 20 revolutions -> Low regardless of sample rate
+  clipping_threshold_pct: 0.5       // >0.5% of samples at/near full-scale -> force Low
+}
+```
+Not yet implemented — logged here so it lands in the same CONFIG object as everything else when built.
 
 ## 6. Subscription tiers (in auth.js)
 | Tier | Price | Allowance |
@@ -113,3 +125,53 @@ ISO 10816-3, ISO 13373-1 & 13373-2, ISO 13379-1, ISO 13381-1, IEC 60034-14, ISO 
 5. Logged-out analysis fails to save → expected under org-scoped RLS; the free flow must run authenticated
    (or needs a scoped anon exception). See DECISIONS A8.
 6. Worker change → edit in the Cloudflare dashboard (no CLI).
+
+## 12. Planned — Data quality tiering (Phase 2, not yet built)
+See DECISIONS A10 for rationale. Two new `nvr_records` columns, table-existence-aware:
+```sql
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'nvr_records') THEN
+    ALTER TABLE public.nvr_records
+      ADD COLUMN IF NOT EXISTS data_quality text DEFAULT 'high'
+        CHECK (data_quality IN ('high', 'medium', 'low')),
+      ADD COLUMN IF NOT EXISTS excluded_from_trend boolean DEFAULT false;
+  END IF;
+END $$;
+```
+- `data_quality` — auto-computed at ingest from the CONFIG.DATA_QUALITY thresholds (§5 above): sample
+  rate vs. shaft frequency, capture duration in revolutions, clipping/saturation check.
+- `excluded_from_trend` — manual, engineer-set override; separate from `data_quality` so a High-quality
+  reading the engineer personally distrusts can be excluded without misrepresenting its measured quality.
+- Enforcement point: any Fleet trend-fit or RUL function must filter
+  `WHERE data_quality != 'low' AND excluded_from_trend = false` before fitting. Single-shot diagnostics
+  (current index.html flow) compute and display `data_quality` but don't need to filter anything — there's
+  no trend yet on a first analysis.
+- AI report prompt should quote the filtered count, e.g. "this trend uses N of M available readings (X
+  excluded for data quality)" — one more CONFIG-quoted, anti-hallucination-safe line (DECISIONS A1).
+
+## 13. Planned — Component replacement resets trend/RUL history (Phase 2, not yet built)
+See DECISIONS A11 for rationale. Schema, table-existence-aware:
+```sql
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'assets') THEN
+    ALTER TABLE public.assets
+      ADD COLUMN IF NOT EXISTS component_changed_at timestamptz;
+  END IF;
+
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'baselines') THEN
+    ALTER TABLE public.baselines
+      ADD COLUMN IF NOT EXISTS superseded_at timestamptz,
+      ADD COLUMN IF NOT EXISTS superseded_reason text;
+  END IF;
+END $$;
+```
+- An engineer-confirmed "component replaced" action stamps `assets.component_changed_at` and marks the
+  current `baselines` row `superseded_at = now()` — old data is kept for audit, not deleted.
+  `superseded_reason` is a free-text note (e.g. "bearing replaced, work order #1234").
+  - Trend/RUL functions filter to `nvr_records.created_at > assets.component_changed_at` (or join on
+    `baselines.superseded_at IS NULL`) before fitting.
+- A fresh baseline is captured on the asset's next analysis after the reset, same as a brand-new asset.
+- Both this and §12 are Phase 2 (Fleet trending / digital twin) work — no urgency pre-Phase-2 since there's
+  no trend yet to either corrupt or reset.

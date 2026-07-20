@@ -67,7 +67,7 @@ const Freemium = {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
     overlay.innerHTML = `
       <div style="background:#161b22;border:1px solid #4d9de0;border-radius:16px;padding:36px 32px;max-width:460px;width:100%;position:relative;text-align:center;">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;color:#4d9de0;margin-bottom:12px;">AXIOMANARE</div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;color:#4d9de0;margin-bottom:12px;">LYNXEYE</div>
         <div style="font-family:'Exo 2',sans-serif;font-weight:800;font-size:26px;color:#e8edf5;margin-bottom:10px;line-height:1.1;">
           ${reason === 'limit' ? 'Free trial complete' : 'Unlock Full Access'}
         </div>
@@ -317,7 +317,7 @@ const CONFIG = {
 };
 
 
-// AxiomAnare  -  Diagnostic Engine
+// LynxEye  -  Diagnostic Engine
 // All logic runs after DOM is fully loaded
 document.addEventListener('DOMContentLoaded', function () {
 // Set measurement date default to today
@@ -2788,7 +2788,7 @@ function buildRagContext(chunks) {
   if (!chunks || chunks.length === 0) return '';
   const lines = [
     '=== KNOWLEDGE BASE CONTEXT ===',
-    'The following excerpts were retrieved from the AxiomAnare knowledge base via semantic search.',
+    'The following excerpts were retrieved from the LynxEye knowledge base via semantic search.',
     'Use them to enrich your analysis where directly relevant. Do NOT fabricate beyond what is shown.',
     ''
   ];
@@ -2838,7 +2838,7 @@ async function streamClaude(){
   // ─────────────────────────────────────────────────────────────────────────
 
   const prompt=[
-    'You are AxiomAssist  -  domain-ringfenced to vibration analysis, condition monitoring, rotating machinery, and maintenance engineering ONLY.',
+    'You are LynxEye Assist  -  domain-ringfenced to vibration analysis, condition monitoring, rotating machinery, and maintenance engineering ONLY.',
     '','=== MACHINE ===',
     d.classRow.machine_type_desc+' | '+d.classRow.iso_standard_ref+' | '+d.classRow.mounting_type+' mount',
     '','=== NVR RECORD ===',
@@ -2954,7 +2954,7 @@ function applyFreemiumGates() {
       'user-select:none',
       'z-index:9000',
     ].join(';');
-    wm.textContent = 'AXIOMANARE FREE TRIAL';
+    wm.textContent = 'LYNXEYE FREE TRIAL';
     rs.style.position = rs.style.position || 'relative';
     rs.appendChild(wm);
   }
@@ -3150,9 +3150,9 @@ function mdToHtml(md) {
       document.body.prepend(hdr);
     }
     hdr.innerHTML = `
-      <div class="ph-logo">Ax</div>
+      <div class="ph-logo"><svg viewBox="0 0 40 24" style="width:80%;height:80%;" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3,13 Q18,2 37,10" fill="none" stroke="#4d9de0" stroke-width="2" stroke-linecap="round"/><path d="M3,13 Q19,21 37,10" fill="none" stroke="#4d9de0" stroke-width="2" stroke-linecap="round"/><g transform="translate(19,11)"><path d="M2.7,0 L4.29,0.54 L4.19,1.07 L2.51,0.99 L2.18,1.59 L3.15,2.96 L2.75,3.33 L1.45,2.28 L0.83,2.57 L0.81,4.24 L0.27,4.31 L-0.17,2.69 L-0.83,2.57 L-1.84,3.91 L-2.32,3.65 L-1.72,2.08 L-2.18,1.59 L-3.79,2.08 L-4.02,1.59 L-2.62,0.67 L-2.7,0 L-4.29,-0.54 L-4.19,-1.07 L-2.51,-0.99 L-2.18,-1.59 L-3.15,-2.96 L-2.75,-3.33 L-1.45,-2.28 L-0.83,-2.57 L-0.81,-4.24 L-0.27,-4.31 L0.17,-2.69 L0.83,-2.57 L1.84,-3.91 L2.32,-3.65 L1.72,-2.08 L2.18,-1.59 L3.79,-2.08 L4.02,-1.59 L2.62,-0.67 Z" fill="#4d9de0"/><circle r="1.5" fill="#1a2030"/></g><g transform="translate(25.4,8.6)"><path d="M2,0 L3.56,0.56 L3.42,1.11 L1.76,0.9 L1.4,1.4 L2.11,2.91 L1.63,3.21 L0.61,1.88 L0,2 L-0.56,3.56 L-1.11,3.42 L-0.9,1.76 L-1.4,1.4 L-2.91,2.11 L-3.21,1.63 L-1.88,0.61 L-2,0 L-3.56,-0.56 L-3.42,-1.11 L-1.76,-0.9 L-1.4,-1.4 L-2.11,-2.91 L-1.63,-3.21 L-0.61,-1.88 L0,-2 L0.56,-3.56 L1.11,-3.42 L0.9,-1.76 L1.4,-1.4 L2.91,-2.11 L3.21,-1.63 L1.88,-0.61 Z" fill="#4d9de0"/><circle r="1.3" fill="#1a2030"/></g></svg></div>
       <div class="ph-title">
-        <div class="ph-name">AxiomAnare</div>
+        <div class="ph-name">LynxEye</div>
         <div class="ph-sub">Agnostic · Augmented AI Analysis</div>
       </div>
       <div class="ph-meta">

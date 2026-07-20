@@ -1,25 +1,135 @@
-# AxiomAnare — Living Project Context
-Last updated: 22 May 2026
-Latest code commit: 0df5503 (fleet gating)
+# LynxEye — Living Project Context
+Last updated: 20 Jul 2026
+Latest code commit: 0df5503 (fleet gating) — index.html UI changes this
+session are NOT yet committed; see Session Log below.
 Company: Kairos Ventures Pte Ltd
 
 ---
 
-## Repository
-- Repo: https://github.com/esimconnect/AxiomAnare (org: esimconnect)
-- Live: https://esimconnect.github.io/AxiomAnare
-- Local: D:\Kairos\AxiomAnare\axiomanare\AxiomAnare (drive letter may vary D: or E:)
-- Git: `cd /d/Kairos/AxiomAnare/axiomanare/AxiomAnare` then standard git add/commit/push
+## What this product is
+LynxEye is an AI-augmented, ISO-ringfenced vibration diagnostic engine for
+condition monitoring of rotary motors and pumps. Users upload vibration data
+files (CSV, MAT, XLSX, JSON, TSV, TXT), the app runs them through a 6-stage
+diagnostic pipeline, classifies machine condition per ISO 10816-3, scores
+fault probabilities, and generates AI diagnostic recommendations via the
+Claude API. A Fleet Dashboard lets organisations manage multiple assets with
+RLS-protected data in Supabase. Goal: a commercially launchable freemium SaaS
+— free tier, paid subscriber tiers, fleet management, admin tooling.
+
+---
+
+## Repository & Hosting — CONFIRMED 2 Jul 2026, unchanged since
+- **Repo:** https://github.com/KairosAxiom/AxiomAnare
+- **Live:** https://kairosaxiom.github.io/AxiomAnare — confirmed working,
+  this is the site David stress-tests against.
+- `esimconnect` is NOT the owner — it only resolves via a GitHub redirect to
+  `KairosAxiom`. Do not use `esimconnect` in links, docs, or a new project's
+  instructions. A stale saved "Project Instructions" draft containing
+  `esimconnect` + other outdated figures (see below) keeps resurfacing across
+  sessions — delete that saved copy.
+- README.md in the repo still has a stale/wrong live link
+  (`limykdavid-maker.github.io/axiomanare`, 404) — leftover from before the
+  move to `KairosAxiom`. **Open task**, see Not Started.
+- Local: D:\Kairos\AxiomAnare\axiomanare\AxiomAnare (drive letter varies —
+  D: office / GENESIS-PRJ3, E: home / DadThinkPadE495)
+- Git: `cd /d/Kairos/AxiomAnare/axiomanare/AxiomAnare` then standard
+  git add/commit/push
 - Branch: main
 - Stable tag: v1.0-stable — commit 4ef5762
 
+### Stale-draft figures to never reintroduce
+A saved Project Instructions draft has been pasted into chat multiple times
+carrying facts that are wrong or superseded. Do not copy these into a new
+project or a fresh instructions field:
+- Org/repo `esimconnect` (correct: `KairosAxiom`, see above)
+- Free tier "2 analyses" (correct: `FREE_ANALYSIS_LIMIT = 5` in app.js)
+- profiles / asset_twins / case_library / knowledge_chunks / usage_log /
+  subscription_events marked "(planned)" (correct: all 12 tables are LIVE in
+  production, RLS v2 applied — see Supabase section below)
+- 10-item CSS variable list (correct: 16 — see Tech Stack below)
+- No mention of RLS, the Cloudflare Worker, or the RAG pipeline at all —
+  all three are core to how this project actually works
+
+---
+
+## Tech Stack
+| Layer | Technology | Notes |
+|---|---|---|
+| Frontend | Vanilla JS, HTML, CSS | no framework, no build step |
+| Fonts | Barlow Condensed (headings/labels), IBM Plex Mono (all data/code display), IBM Plex Sans (body) | |
+| Charts | Chart.js 4.4.1 | FFT + radar + trend |
+| Parsers | PapaParse (CSV), SheetJS (XLSX), custom MAT parser | agnosticParser2.js |
+| Backend | Supabase — Postgres + Auth + Storage + pgvector | ref `zjfhxutcvjxootoekade` |
+| AI | Anthropic Claude API, `claude-sonnet-4-20250514`, max_output_tokens 1000 | via Cloudflare Worker proxy — confirm this model string is still current next time it's touched |
+| Payments | Stripe (primary), PayPal (secondary, deferred) | |
+| Hosting | GitHub Pages, org `KairosAxiom` | see Repository section above |
+| Currency | USD primary, local via Stripe/PayPal auto | |
+
+### CSS variables (defined in index.html `:root`, reused across pages)
+16 total — a previously documented list of 10 was incomplete:
+`--bg`, `--surface`, `--surface2`, `--surface3`, `--border`, `--border2`,
+`--accent`, `--accent2`, `--green`, `--yellow`, `--orange`, `--red`,
+`--purple`, `--text`, `--muted`, `--dim`
+
+**Current palette: cream/light theme** (converted from dark navy 6 Jul 2026
+— see Session Log). Example values: `--bg:#faf8f3`, `--surface:#ffffff`,
+`--text:#1c1f26`, `--accent:#1f6fb2`. Full values live in index.html.
+
+**Known governance gap (open, not yet remediated):** many colors in
+index.html are hardcoded hex/rgba literals that do NOT reference the
+`:root` variables — found during the 6 Jul conversion (43 hex + 71 rgba
+literal instances outside the print stylesheet, several of them
+near-duplicate colors of the actual variables, e.g. three different
+"greens" were in simultaneous use). These were value-converted in place
+during the 6 Jul light-theme pass so the visual result is coherent, but
+they still aren't wired to `var()` — a future edit to `--green` etc. will
+NOT automatically update them. A proper pass to replace these literals with
+actual `var()` references is real cleanup debt, not done yet. Do not
+introduce new hardcoded color literals going forward — always reuse the
+variables.
+
+---
+
+## Coding standards & assistant operating rules
+- Read this file (CONTEXT.md) first, every session, before writing any code.
+- Match existing code style in all files.
+- Inline styles preferred over new CSS classes (existing pattern in this repo).
+- IBM Plex Mono for all data/code display; Barlow Condensed for headings/labels.
+- Always maintain ISO standard references in the UI.
+- Never remove existing functionality — extend only.
+- All Supabase queries must respect RLS policies (see RLS section below).
+- Shared logic goes in separate .js files, not duplicated per page.
+- Maintain consistency across index.html, fleet.html, admin.html, and any
+  new pages.
+- Keep the engineering credibility of the product — no casual language in
+  the UI. **No emojis in diagnostic output is the stated standard, but it
+  is currently NOT enforced** — 17 emoji character entities are live in
+  index.html (mgmt-icon, early-warning banner, buttons, etc.), confirmed by
+  audit 6 Jul 2026. David has explicitly deferred cleanup until after the
+  current heavy-lift work is done — this is a known, intentional exception,
+  not an oversight. Do not silently "fix" it before then; do not forget it
+  either — see Not Started.
+- Respect the caveat, everywhere: AI output requires qualified engineer
+  review and sign-off. It is a draft, not a certified determination.
+- Update this file with decisions made in each chat; re-upload to Project
+  Knowledge and commit to repo as a discrete closing step.
+- Validate migrations in a sandbox Postgres instance before running on
+  production.
+- Verification-driven: want actual evidence (logs, query results,
+  screenshots) before marking anything complete.
+- Tight scope control: park out-of-scope ideas explicitly (see DECISIONS.md
+  PART C for the rejected-patterns log) rather than building speculatively.
+
+---
+
 ## Supabase
-- Project: "Kairos Axiom" (FREE tier) / AxiomAnare / main (PRODUCTION)
+- Project: "Kairos Axiom" (FREE tier) / LynxEye / main (PRODUCTION)
 - URL: https://zjfhxutcvjxootoekade.supabase.co
 - Anon key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqZmh4dXRjdmp4b290b2VrYWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMjgzODAsImV4cCI6MjA5MDcwNDM4MH0.5yGgSjALJhTQm5Ud3W-fU2Bgo-3PkziaS0oLrGMYQ9o
-  (note: fleet.html / index.html also reference a publishable key sb_publishable_lM8rmd2rwRo3-XXW_iOy2A_28Zinsh8)
+  (note: fleet.html / index.html also reference a publishable key
+  sb_publishable_lM8rmd2rwRo3-XXW_iOy2A_28Zinsh8)
 - pgvector: enabled
-- Keep-alive: Cloudflare Worker cron "0 9 */3 * *" — VERIFIED firing (see 18/22 May logs)
+- Keep-alive: Cloudflare Worker cron "0 9 */3 * *" — VERIFIED firing
 
 ### LIVE TABLES (12 — confirmed via Table Editor 22 May)
 asset_twins, assets, baselines, bearing_library, case_library,
@@ -27,13 +137,14 @@ fault_signatures, knowledge_chunks, nvr_records, organisations,
 profiles, subscription_events, usage_log
 
 ### SCHEMA DRIFT — IMPORTANT
-The committed schema file (axiomanare_schema.sql) and the live DB have diverged.
+The committed schema file (axiomanare_schema.sql) and the live DB have
+diverged.
 - Schema file defines 8 tables: organisations, assets, baselines, nvr_records,
   fault_detections, fault_signatures, zone_progressions, bearing_library.
 - The 6 "sprint" tables (profiles, asset_twins, case_library, knowledge_chunks,
   usage_log, subscription_events) were created by an UNCOMMITTED migration
-  (the 13 Apr "schema.sql utility script") — they exist in prod but are NOT in
-  the committed schema file.
+  (the 13 Apr "schema.sql utility script") — they exist in prod but are NOT
+  in the committed schema file.
 - fault_detections and zone_progressions are in the schema FILE but were
   NEVER created in prod. The live DB does not have them.
 - Net live state = 6 from schema file (no fault_detections/zone_progressions)
@@ -45,17 +156,15 @@ subscription_status (subscription_status enum), stripe_customer_id (text),
 stripe_sub_id (text), paypal_sub_id (text), asset_addon_count (int),
 analyses_used (int), billing_interval (text), created_at, updated_at,
 is_admin (boolean — ADDED 22 May by RLS migration)
-- NOTE: the Stripe column is `stripe_sub_id`, NOT `stripe_subscription_id` as
-  earlier CONTEXT "pending" items wrongly stated. Both Stripe columns already
-  exist in prod — the "ADD COLUMN" pending item is effectively DONE.
+
+### nvr_records columns (confirmed via 13 Apr migration)
+feature_vector (jsonb), user_confirmed (boolean), confirmed_fault,
+twin_deviation — plus base columns from the schema file. See DECISIONS
+A10/A12 for planned/proposed additions not yet run on prod.
 
 ---
 
 ## RLS — ROW LEVEL SECURITY (hardened 22 May, verified on prod)
-Earlier CONTEXT claimed RLS was "hardened and tested." That was INCORRECT — the
-live DB carried open "USING (true)" beta policies and organisations was flagged
-UNRESTRICTED. This was closed on 22 May by rls_foundation_v2.sql.
-
 ### Tenancy model
 - Individual AND org based. An individual account = an org of one.
 - Every profile points at an org_id. Customer data is org-scoped.
@@ -64,156 +173,33 @@ UNRESTRICTED. This was closed on 22 May by rls_foundation_v2.sql.
 ### What rls_foundation_v2.sql installed (run on prod 22 May, success)
 - Added profiles.is_admin boolean default false.
 - Two SECURITY DEFINER helpers (SET search_path = public, granted to anon +
-  authenticated + service_role):
-    current_org_id() -> the caller's org
-    is_admin()       -> whether caller is admin
-- Column-guard trigger guard_profile_privileged_cols() on profiles BEFORE
-  UPDATE: blocks non-admin / non-service_role changes to tier, is_admin, org_id.
-  Exempts auth.role() = 'service_role' so the Stripe webhook can still set tier.
+  authenticated + service_role): current_org_id(), is_admin().
+- Column-guard trigger on profiles BEFORE UPDATE: blocks non-admin /
+  non-service_role changes to tier, is_admin, org_id.
 - Dropped all legacy open policies; installed org-scoped + admin policies.
-- Migration is TABLE-EXISTENCE-AWARE (one DO block) — only touches tables that
-  exist, so it matches the drifted live DB and skips fault_detections /
+- Migration is table-existence-aware — skips fault_detections /
   zone_progressions cleanly.
-- WIPED pre-RLS test data (Option A): TRUNCATEd assets/baselines/nvr_records
-  (fault_detections absent). Reference/silo data preserved (bearing_library,
-  fault_signatures seed).
-
-### Policy counts confirmed on prod (per table)
-profiles 4, organisations 4, bearing_library 2, fault_signatures 2,
-assets / baselines / nvr_records / asset_twins / case_library /
-knowledge_chunks / usage_log / subscription_events = 1 each.
+- WIPED pre-RLS test data (Option A): TRUNCATEd assets/baselines/nvr_records.
 
 ### Access summary
 - profiles: own row or admin (privileged cols guarded by trigger).
 - organisations: members read; member/admin update; authenticated insert;
   admin delete.
-- assets / baselines / nvr_records: org-scoped (baselines & nvr scoped through
-  parent asset's org) or admin.
-- fault_signatures / zone_progressions (CUMULATIVE SILO, anonymised, shared
+- assets / baselines / nvr_records: org-scoped or admin.
+- fault_signatures / zone_progressions (cumulative silo, anonymised, shared
   cross-customer by design): authenticated insert + read; admin all.
 - bearing_library: ANON READ preserved (free diagnostic needs it); admin write.
 - asset_twins / case_library / knowledge_chunks / usage_log /
-  subscription_events: ADMIN-ONLY (features not built yet; refine when built).
-  RAG reads go via SECURITY DEFINER match fn which bypasses RLS.
+  subscription_events: admin-only (features not built yet).
 
-### First admin bootstrapped (22 May)
-- davidlimyk@gmail.com promoted to is_admin = true.
-- NOTE: the console (postgres role) does NOT bypass the column-guard trigger.
-  Bootstrap required temporarily disabling the trigger:
-    ALTER TABLE public.profiles DISABLE TRIGGER trg_guard_profile_privileged_cols;
-    UPDATE public.profiles SET is_admin = true WHERE id = (...);
-    ALTER TABLE public.profiles ENABLE TRIGGER trg_guard_profile_privileged_cols;
-- davidlimyk@gmail.com was created via the Subscribe path, so its org_id is
-  likely NULL. Fine for an admin (sees all via is_admin()), but note it has no
-  org attached.
+### First admin bootstrapped
+- davidlimyk@gmail.com → is_admin = true. Console (postgres role) does NOT
+  bypass the column-guard trigger — bootstrap required temporarily disabling
+  it. org_id likely NULL (created via Subscribe path) — fine for an admin.
 
 ### handle_new_user trigger — CONFIRMED working
 Signup creates an auth.users row AND auto-creates a profiles row (tier=free,
-is_admin=false). Verified 22 May with davidlimyk@gmail.com.
-
-### RLS validation method
-rls_foundation_v2.sql was validated in a sandbox Postgres 16 against a faithful
-12-table replica before running on prod. Behavioural tests passed: cross-org
-isolation, self-escalation blocked by trigger, service_role/webhook tier update
-works (with BYPASSRLS), admin cross-org visibility, anon bearing_library read
-preserved, anon customer-data locked. Two GRANT bugs were caught and fixed in
-testing (helpers needed EXECUTE for service_role + anon, not just authenticated)
-— this is the validated v2.
-
----
-
-## Completed Work
-- [x] Single-channel diagnostic pipeline
-- [x] Multi-channel diagnostic pipeline
-- [x] PDF export
-- [x] Fleet Dashboard (auth, RLS, baseline + batch upload)
-- [x] Fleet detail panel
-- [x] Agnostic file parser (CSV, MAT, XLSX, JSON, TSV)
-- [x] Nav: Free to Try, Subscribe, Login, Fleet Dashboard buttons
-- [x] Animated canvas logo in nav (gears + green wave)
-- [x] Responsive layout — tablet (≤900px) + mobile (≤600px)
-- [x] ML label maps: cwru, nasa_ims, epson
-- [x] CWRU .mat dataset download — 109 files
-- [x] KB/Standards: ISO_10816_Chart_colour.pdf
-- [x] KB/Reports: K394-11 + Reports 001–009 + CM_SiteA/B/C (8 files)
-- [x] KB/Reference: Nagahama_2025, CWRU README, CWRU_Dataset_Overview,
-      VCAT_Reference_Material
-- [x] KB/Manuals: SKF_Bearing_Installation_Guide, SKF_Bearing_Maintenance_Handbook
-- [x] NASA IMS 1st_test (2,156) + 2nd_test (984); Epson trimmed (96)
-- [x] Supabase schema — all tables (note drift, above)
-- [x] auth.js shared module — signUp, signIn, signOut, getSession, getTier,
-      getProfile, incrementAnalysesUsed, tierAnalysisLimit
-- [x] Auth + Subscribe modal — Login tab + Subscribe tab with tier cards
-- [x] RAG pipeline — Cloudflare Worker /embed + /rag routes
-- [x] app.js — ragQuery(), buildRagContext(), streamClaude() with KB injection
-- [x] match_knowledge_chunks — SECURITY DEFINER, pgvector tested
-- [x] Total KB: 192 chunks embedded (voyage-3)
-- [x] Stripe Checkout integration — Worker /create-checkout-session route
-- [x] Stripe webhook — Worker /stripe-webhook route (HMAC-SHA256, no external lib)
-- [x] auth.js — _doSignup() Stripe redirect, _handlePaymentReturn(), toast
-- [x] Landing page (landing.html)
-- [x] Baseline prompt toast — Zone A/B post-analysis
-- [x] DC + linear detrend (ISO 13373-2:2016 §7.2)
-- [x] Spectral velocity RMS via Parseval (ISO 10816-3 §4.2)
-- [x] BSF 4-path detection
-- [x] CWRU benchmark 5/5
-- [x] FREE_ANALYSIS_LIMIT = 5 (app.js)
-- [x] Tier gating — index.html (Freemium.syncTier() wired to Auth.getTier())
-- [x] Supabase keep-alive — CF Worker scheduled() cron "0 9 */3 * *" — VERIFIED
-- [x] Tier gating — fleet.html (behind FLEET_GATING_ENABLED flag, default off) — 22 May
-- [x] Stripe profiles columns (stripe_customer_id, stripe_sub_id) — already in prod
-- [x] RLS FOUNDATION — org-scoped + admin, helpers, escalation trigger,
-      test-data wipe (rls_foundation_v2.sql, run on prod) — 22 May
-- [x] profiles.is_admin column + first admin bootstrapped — 22 May
-- [x] handle_new_user signup trigger confirmed firing — 22 May
-
-## In Progress
-- [ ] Admin dashboard (admin.html) — NEXT (RLS foundation now in place)
-
-## Pending — Stripe go-live (code done, not live)
-- [x] Supabase profiles stripe columns — DONE (already present, stripe_sub_id)
-- [ ] Cloudflare Worker: add 5 secrets (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET,
-      STRIPE_PRICE_PRO, STRIPE_PRICE_FLEET_STARTER, STRIPE_PRICE_FLEET_PRO)
-- [ ] Stripe Dashboard: create 4 products + prices, register webhook endpoint
-- [ ] Redeploy Worker after adding secrets
-- [ ] Test full Stripe flow with sk_test_ keys + card 4242 4242 4242 4242
-- [ ] Live error currently seen: "No Stripe Price ID configured for tier: pro"
-      (expected until secrets/products exist)
-
-## Known Issues / Corrections (surfaced 22 May)
-- [ ] auth.js tierAnalysisLimit() returns 2 for free — STALE, real limit is 5
-      (app.js). Reconcile (auth.js line ~76).
-- [ ] Pluralisation: badge reads "N free analyses left". "analyses" is correct
-      for plural, but at count=1 it should say "1 free analysis". Check
-      updateFreeBadge() pluralises (count===1 ? 'analysis' : 'analyses').
-- [ ] PRICE RECONCILIATION: Subscribe modal in auth.js shows HARDCODED prices
-      (Pro $49, Fleet Starter $99, Fleet Pro $299) even though CONTEXT pricing
-      was "deferred/TBD". Stripe products MUST be created with these exact
-      prices or displayed vs charged price will disagree.
-- [ ] Verify free-flow RLS impact: does the LOGGED-OUT free diagnostic write to
-      nvr_records or fault_signatures? Those are now locked to authenticated/
-      org-scoped. If the free flow writes there, those writes will fail and need
-      a scoped anon exception. Bearing lookup (anon read) is preserved, so the
-      core diagnostic should be fine.
-- [ ] RLS app-impact: fleet.html/app.js may have relied on old open access.
-      First post-RLS stress test is also the test of whether the app respects
-      its own RLS.
-
-## Not Started
-- [ ] Digital twin Phase 1
-- [ ] ML feature extraction (CWRU/NASA)
-- [ ] Case library population
-- [ ] Email notifications
-- [ ] Annual pricing / discount logic
-- [ ] PayPal integration (deferred — after Stripe is live)
-- [ ] Supabase Storage buckets (ml-raw-signals, knowledge-base)
-- [ ] NASA IMS 3rd_test (ZIP corrupt, deferred)
-- [ ] KB/Reports: Q1, Q3, Q4 2023 quarterly reports (pending upload)
-- [ ] KB/Manuals: CAT 1 manual (pending)
-- [ ] CWRU 48 kHz drive end files (deferred)
-- [ ] 6205-2RS bearing → add to bearing_library
-- [ ] fault_detections / zone_progressions — decide whether to create in prod
-      (in schema file, not in live DB; RLS migration skips them)
+is_admin=false).
 
 ---
 
@@ -226,456 +212,314 @@ testing (helpers needed EXECUTE for service_role + anon, not just authenticated)
 | Fleet Pro     | $299/mo | Unlimited | 30     | ✓         | ✓     |
 | Asset add-on  | $25/mo  | —         | +1     | ✓         | ✓     |
 
-- Prices above are HARDCODED in the auth.js Subscribe modal (confirmed live).
-  Stripe products/prices must match these exactly.
-- No upload caps on any paid tier; gate on assets only.
-- Annual: 2 months free (pay 10, get 12) — logic not built.
-- AI report is the primary freemium gate.
-- Pricing philosophy: below expense claim threshold — engineer pays own card.
-- Replaces $200–$1,600/asset desk analysis time, NOT the site visit. Engineer
-  reviews + signs off all output. AI report is a draft, not a certified
-  determination.
+Prices are hardcoded in the auth.js Subscribe modal — Stripe products must
+match exactly once live. No upload caps on any paid tier; gate on assets
+only. AI report is the primary freemium gate. Priced below expense claim
+threshold — engineer pays own card. Replaces $200–$1,600/asset desk analysis
+time, not the site visit. Engineer reviews + signs off all output; AI report
+is a draft, not a certified determination.
 
 ---
 
 ## FREEMIUM GATE — Implementation Detail
 ```
 FREE_ANALYSIS_LIMIT = 5 (app.js)
-Free tier = anonymous, CLIENT-SIDE (localStorage counter). No Supabase account,
-no profiles row. "Free to Try" is NOT a signup.
+Free tier = anonymous, CLIENT-SIDE (localStorage counter). No Supabase
+account, no profiles row. "Free to Try" is NOT a signup.
 
-Freemium.isPro()
-  → reads localStorage.ax_tier (written by syncTier())
-  → any value other than 'free' returns true
-  → ax_pro legacy fallback if ax_tier absent
+Freemium.isPro() → reads localStorage.ax_tier; any value other than 'free'
+returns true; ax_pro legacy fallback if ax_tier absent.
 
-Freemium.syncTier() [async]
-  → called 200ms after auth.js loads (index.html inline script)
-  → window.Auth.getTier() → Supabase profiles.tier → caches ax_tier
-  → if paid: removes watermark, trial banner, upgrade modal, PDF lock
+Freemium.syncTier() [async] → called 200ms after auth.js loads →
+window.Auth.getTier() → Supabase profiles.tier → caches ax_tier.
 
-Auth.getTier() returns profile?.tier || 'free'
-  → one of 'pro' | 'fleet_starter' | 'fleet_pro' | 'free' (never null)
+Auth.getTier() returns profile?.tier || 'free' → one of
+'pro' | 'fleet_starter' | 'fleet_pro' | 'free' (never null)
 ```
 
-### FLEET GATING — fleet.html (22 May, behind feature flag)
+### FLEET GATING — fleet.html (behind feature flag)
 ```
 const FLEET_GATING_ENABLED = false   (fleet.html ~line 726)
-  → DEFAULT OFF for stress testing — any authenticated user reaches dashboard.
-  → Flip to TRUE before launch to enforce fleet-tier-only access.
+  → DEFAULT OFF for stress testing. Flip to TRUE before launch.
 
-CRITICAL: fleet.html uses its OWN self-contained auth (raw fetch to
-/auth/v1/token, _session + localStorage.ax_session). It does NOT establish a
-supabase-js session. So Auth.getTier() (which reads via the supabase-js client)
-would floor every fleet user to 'free' and lock out paying subscribers.
-THEREFORE fleet gating uses its own getUserTier() — reads profiles.tier via
-fleet's bearer-token sbGet, same pattern as loadUserOrg() reading organisations.
+fleet.html uses its OWN self-contained auth (raw fetch, localStorage.
+ax_session) — no supabase-js session. Auth.getTier() would floor every
+fleet user to 'free'. Fleet gating uses its own getUserTier() instead
+(bearer-token sbGet on profiles).
 
-When enabled:
-  - getUserTier() reads profiles.tier (bearer token, not Auth.getTier())
-  - isFleetTier() = fleet_starter | fleet_pro only
-  - enforceFleetGate() gates BOTH entry points (fresh login + session restore)
-    before showApp()
-  - free/pro users → #upgrade-screen overlay (reuses login-card styling),
-    CTA opens Auth.openModal('subscribe'), plus sign-out
-  - doLogout() also clears the upgrade overlay
-
-OUT OF SCOPE (still open):
-  - Asset-count enforcement (Fleet Starter 10 / Fleet Pro 30) — separate from
-    access gating, not built.
-  - "Upgrade an existing logged-in user" Stripe flow — belongs to Stripe
-    go-live; subscribe modal currently does signup-then-checkout.
-
-PRE-LAUNCH (when enabling): flip flag → true; test fleet_starter PASSES, test
-pro/free gets BLOCKED — validates the profiles RLS self-read.
+OUT OF SCOPE (still open): asset-count enforcement (10/30), "upgrade an
+existing logged-in user" Stripe flow.
 ```
 
 ---
 
 ## Payments
 - Stripe: primary (account exists, keys TBC)
-- PayPal: secondary (deferred — after Stripe live; paypal_sub_id column exists)
-- Currency: USD primary, local via Stripe/PayPal auto
-- Billing: monthly auto-renew, cancel anytime
-- Products to create in Stripe (with prices above): Pro, Fleet Starter,
-  Fleet Pro, Asset Add-on
+- PayPal: secondary (deferred until Stripe live)
+- Products to create in Stripe: Pro, Fleet Starter, Fleet Pro, Asset Add-on
 
-### Cloudflare Worker secrets required (Worker → Settings → Variables → Secrets)
-| Secret | Value |
-|--------|-------|
-| STRIPE_SECRET_KEY          | sk_live_… (or sk_test_…) |
-| STRIPE_WEBHOOK_SECRET      | whsec_… |
-| STRIPE_PRICE_PRO           | price_… (Pro monthly) |
-| STRIPE_PRICE_FLEET_STARTER | price_… (Fleet Starter monthly) |
-| STRIPE_PRICE_FLEET_PRO     | price_… (Fleet Pro monthly) |
+### Cloudflare Worker secrets required (dashboard → Settings → Variables)
+STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_PRO,
+STRIPE_PRICE_FLEET_STARTER, STRIPE_PRICE_FLEET_PRO
 
 ### Stripe webhook endpoint
-- URL: https://restless-tree-eac8.kairosventure-io.workers.dev/stripe-webhook
-- Events: checkout.session.completed, customer.subscription.deleted
+URL: https://restless-tree-eac8.kairosventure-io.workers.dev/stripe-webhook
+Events: checkout.session.completed, customer.subscription.deleted
 
 ---
 
 ## Cloudflare Worker — restless-tree-eac8
-- Account: kairosventure.io@gmail.com
-- URL: restless-tree-eac8.kairosventure-io.workers.dev
-- Routes:
-    POST /v1/messages              — Claude API proxy (ANTHROPIC_API_KEY)
-    POST /embed                    — Voyage AI embeddings (VOYAGE_API_KEY)
-    POST /rag                      — Supabase match_knowledge_chunks (SUPABASE_SERVICE_KEY)
-    POST /create-checkout-session  — Stripe Checkout (STRIPE_SECRET_KEY + PRICE_*)
-    POST /stripe-webhook           — Stripe events (STRIPE_WEBHOOK_SECRET)
-    CRON "0 9 */3 * *"             — Supabase keep-alive ping (scheduled())
-- Secrets bound: ANTHROPIC_API_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL,
-  VOYAGE_API_KEY (Stripe secrets still TODO)
-- Keep-alive VERIFIED 22 May: log "keepalive 200 @ 2026-05-19T09:00:11.867Z",
-  0 errors, firing on schedule (09:00 UTC). Workers Logs enabled in Observability.
+Dashboard-managed — no wrangler.toml, no CLI deploy, edited in CF dashboard.
+| Route | Purpose |
+|---|---|
+| POST /v1/messages | Claude API proxy (streaming) |
+| POST /embed | Voyage AI embeddings |
+| POST /rag | Supabase match_knowledge_chunks |
+| POST /create-checkout-session, /stripe-webhook | Stripe |
+| CRON "0 9 */3 * *" | Supabase keep-alive ping |
+Secrets bound: ANTHROPIC_API_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL,
+VOYAGE_API_KEY (Stripe secrets still TODO).
 
 ### RAG Pipeline (live)
 ```
 PDF/MD → chunk → embed (voyage-3, 1024-dim) → knowledge_chunks (pgvector)
-→ at analysis: semantic query from NVR context → /embed → /rag → top-5 chunks
-  (0.30 similarity floor) → injected into Claude system prompt → grounded report
+→ at analysis: semantic query from NVR context → /embed → /rag → top-5
+  chunks (0.30 similarity floor) → injected into Claude system prompt
 ```
 
 ---
 
-## ML + Knowledge Base Strategy
+## Completed Work (high-level — full history in Session Log)
+Single/multi-channel diagnostic pipeline, PDF export, Fleet Dashboard,
+agnostic file parser, RAG pipeline, Stripe integration (code, not live),
+RLS foundation (applied to prod), admin bootstrap, CWRU benchmark, tier
+gating on both index.html and fleet.html (fleet behind flag), Supabase
+keep-alive cron (verified), KB at 192 chunks embedded.
 
-### Data Sources
-| Source                  | Type | Fault Coverage           | Status     |
-|-------------------------|------|--------------------------|------------|
-| CWRU dataset            | MAT  | BPFO, BPFI, BSF          | ✓ Complete |
-| NASA IMS 1st/2nd_test   | MAT  | RUL / run-to-failure     | ✓ Complete |
-| NASA IMS 3rd_test       | MAT  | RUL                      | ✗ Deferred |
-| Epson field data        | CSV  | Mixed field faults       | ✓ Complete |
-| K394-11 field report    | PDF  | Imbalance (confirmed)    | ✓ Uploaded |
-| Reports 001–006         | PDF  | Anonymised field cases   | ✓ Uploaded |
-| Reports 007–009         | MD   | Pharma plant, Apr 2023   | ✓ Complete |
-| CM Site summaries (8)   | MD   | AHU/UTY/MFG/TankFarm/WWTP| ✓ Complete |
-| ISO 10816 CMVA guide    | PDF  | Zone thresholds          | ✓ Uploaded |
-| Nagahama 2025           | PDF  | Phase fault diagnosis    | ✓ Uploaded |
-| CWRU README / Overview  | PDF/MD| Bearing dataset ref     | ✓ Complete |
-| VCAT_Reference_Material | MD   | Fault spectra, ISO, FFT  | ✓ Complete |
-| SKF Install / Handbook  | MD   | Symptom/cause, RCA       | ✓ Complete |
-| Reports Q1/Q3/Q4        | MD   | Pharma plant 2023        | Pending    |
-| CAT 1 manual            | PDF  | All fault types          | Pending    |
+## In Progress
+- [ ] Admin dashboard (admin.html) — status not re-verified recently,
+      don't assume "in progress" without checking
+- [ ] Phase 1.5 stress testing (see Build Sequence)
 
-### KB Reports — Content Summary
-| Report | Assets | Key Faults |
-|--------|--------|------------|
-| 001–006 | Various | Mixed field cases |
-| 007 | 24 AHUs — pharma | Misalignment/beat (Danger), bearing freq (Alert), unbalance (Warning) |
-| 008 | 15 Tank Farm — pharma | Early bearing fault (demod elevated, velocity normal) |
-| 009 | 2 Booster pumps — pharma | Clean baseline — healthy reference |
-
-### KB Report Anonymisation Rules
-Client→[CLIENT], Plant/site→[SITE-A/B/C], Address→[SITE ADDRESS],
-Contact→[CLIENT CONTACT], Provider→[SERVICE PROVIDER], Ref#→[REPORT-REF].
-Keep: asset tag numbers, process area descriptions (diagnostically relevant).
-
-### CWRU Dataset Folder Structure
-```
-Data_Sets/cwru/
-├── normal/   normal_0hp..3hp.mat
-├── drive_end/ IR/B/OR (all sizes + loads + 3 OR positions)
-└── fan_end/   IR/B/OR
-```
-- Label map: ML/Labels/cwru_label_map.json (filenames match exactly).
-- Taxonomy: inner_race→BPFI, ball→BSF, outer_race→BPFO.
-- Validated against independent academic review (CWRU_Dataset_Overview.md).
-
-### ML Pipeline (planned)
-1. Supabase Storage buckets  2. Bulk upload CWRU/NASA  3. Feature extraction
-4. Label by fault type  5. Train classifier (target: 12 months post-launch)
-
----
-
-## Key Decisions Log
-| Date     | Decision                                            | Rationale |
-|----------|-----------------------------------------------------|-----------|
-| Apr 2026 | Stripe primary, PayPal secondary                    | Existing account, best docs |
-| Apr 2026 | PayPal deferred until Stripe live                   | Reduce scope, ship faster |
-| Apr 2026 | No upload caps on paid tiers                        | Gate on assets only |
-| Apr 2026 | pgvector in Supabase (not separate vector DB)       | Single platform |
-| Apr 2026 | CONTEXT.md as cross-chat bridge                     | Projects don't share chat history |
-| Apr 2026 | Digital twin Phase 1 for Fleet on launch            | Justifies Fleet price |
-| Apr 2026 | ML: collect now, train at 12 months                 | Need labelled volume first |
-| Apr 2026 | Site visit still required (AI drafts, engineer signs)| Liability / credibility |
-| Apr 2026 | CWRU descriptive filenames + flat drive/fan folders  | Matches label map |
-| Apr 2026 | NASA IMS 3rd_test deferred                          | ZIP corrupt, no Kaggle |
-| Apr 2026 | KB reports 1/quarter, .md not .docx                 | Diminishing returns; RAG-ready |
-| Apr 2026 | auth.js IIFE, window.Auth API; modal built in JS    | Matches Freemium pattern; works on fleet too |
-| Apr 2026 | Signup creates Supabase acct then → Stripe          | Clean auth vs payment split |
-| Apr 2026 | Stripe client_reference_id = Supabase user UUID      | Links payment to profile in webhook |
-| Apr 2026 | Webhook HMAC-SHA256 via SubtleCrypto                | No external lib in CF Worker |
-| Apr 2026 | Default tier = Pro in Subscribe modal               | Lowest-friction conversion |
-| Apr 2026 | Responsive breakpoints 900/600                      | iPad + phone |
-| Apr 2026 | FREE_ANALYSIS_LIMIT = 5 (was 2)                     | Confirmed in app.js |
-| Apr 2026 | Freemium.isPro() reads ax_tier; syncTier 200ms delay | Supabase session restore first |
-| May 2026 | Supabase keep-alive via CF Worker cron (not GH Actions)| Worker already has SERVICE_KEY |
-| May 2026 | Cron "0 9 */3 * *"; query GET /assets?limit=1       | Margin under 7-day pause; minimal payload |
-| May 2026 | Avoid */N cron in JSDoc blocks                      | "*/" terminates /** */ |
-| 22 May   | Fleet gating behind FLEET_GATING_ENABLED, default off| Stress testing needs open access; 1-line flip at launch |
-| 22 May   | Fleet gating uses own getUserTier(), NOT Auth.getTier()| fleet.html has no supabase-js session; Auth path would lock out paid users |
-| 22 May   | Tenancy: individual = org of one                    | One model covers both account types |
-| 22 May   | SECURITY DEFINER helpers (current_org_id, is_admin) | Avoid RLS recursion on profiles |
-| 22 May   | Column-guard trigger exempts service_role           | Webhook must still set tier; trigger fires regardless of RLS |
-| 22 May   | Helpers granted to anon+authenticated+service_role  | Bug found in test: missing grant broke webhook + anon |
-| 22 May   | Migration table-existence-aware (DO block)          | Live DB drifted; skip missing tables (fault_detections etc.) |
-| 22 May   | Wipe pre-RLS test data (Option A)                   | Orphan rows had no real org; clean slate for stress testing |
-| 22 May   | Cumulative silo (fault_signatures/zone) = shared    | Anonymised cross-customer by design, not org-scoped |
-| 22 May   | bearing_library keeps anon read                     | Free diagnostic looks up specs before login |
-| 22 May   | First admin bootstrapped via DISABLE TRIGGER        | Console (postgres) does NOT bypass the guard trigger |
+## Not Started
+- [ ] Fix README.md's stale live-app link
+- [ ] Emoji cleanup in UI (17 instances) — explicitly deferred by David
+      until after current heavy-lift work; tracked here so it isn't lost
+- [ ] Color-literal-to-var() cleanup (see CSS variables governance gap above)
+- [ ] Commit the 6 Jul UI changes (cream theme + KPI strip) to the repo —
+      currently only exist as a local file David has, not yet pushed
+- [ ] Digital twin Phase 1, ML feature extraction, case library population,
+      email notifications, annual pricing logic, PayPal integration,
+      Supabase Storage buckets, NASA IMS 3rd_test, KB Q1/Q3/Q4 reports,
+      CAT 1 manual, CWRU 48kHz files, 6205-2RS bearing addition
+- [ ] Data quality tiering (DECISIONS A10) and component-replacement trend
+      reset (DECISIONS A11) — Phase 2, not urgent yet
+- [ ] Mandatory input metadata / no silent defaults (DECISIONS A12) — now
+      formalized in DECISIONS.md as of this session; implementation still
+      not started. Known live gap: sample rate silently defaults to 1.0 kHz
+      when omitted (found during Trrish1/Trrish2 CSV stress test).
 
 ---
 
 ## Build Sequence
 ```
-PHASE 1 — Foundation
-├── Supabase schema                                   ✓ DONE
-├── auth.js shared module                             ✓ DONE
-├── Auth + Subscribe modal                            ✓ DONE
-├── RAG pipeline (CF Worker + pgvector)               ✓ DONE
-├── Animated logo + responsive layout                 ✓ DONE
-├── Stripe integration (code)                         ✓ DONE (not live; PayPal deferred)
-├── Tier gating — index.html                          ✓ DONE
-├── Supabase keep-alive cron                          ✓ DONE (verified)
-├── Tier gating — fleet.html                          ✓ DONE (behind flag, off)
-├── RLS foundation + admin flag                       ✓ DONE (verified on prod)
-├── Admin dashboard (admin.html)                      ← NEXT
-└── Landing page                                      ✓ DONE (copy only)
-
-PHASE 1.5 — Stress testing (coverage + accuracy)      ← user priority after admin
-├── Anonymous free-flow under RLS (bearing lookup, counter, pluralisation)
-├── Fleet flow under RLS (org-scoped reads/writes)
+PHASE 1 — Foundation                                   ✓ DONE (core)
+PHASE 1.5 — Stress testing (coverage + accuracy)       ← current priority
+├── Anonymous free-flow under RLS
+├── Fleet flow under RLS
 ├── Diagnostic accuracy vs CWRU labelled benchmark
-├── File-format coverage (CSV/MAT/XLSX/JSON/TSV) + edge cases
+├── File-format coverage + edge cases
 └── Robustness (malformed files, odd sample rates, missing metadata)
 
 PHASE 2 — Intelligence (pre-launch)
 ├── Digital twin Phase 1 (Fleet)
-├── Supabase Storage buckets
-└── CWRU/NASA feature extraction
+├── Data quality tiering (A10) / component-replacement reset (A11)
+├── Mandatory input metadata (A12)
+└── Supabase Storage buckets, CWRU/NASA feature extraction
 
 PHASE 3 — Growth (post-launch)
-├── Confirmed diagnosis feedback loop
-├── Email notifications
-├── Statistical anomaly detection
-├── PayPal integration
-└── Fleet Pro tier unlock
-
 PHASE 4 — ML (12-24 months)
-├── ML classifier
-├── Full digital twin with degradation curve
-├── API access for Fleet Pro
-└── White-label option
 ```
 
 ---
 
 ## Files In This Project
-| File                       | Purpose |
-|----------------------------|---------|
-| CONTEXT.md                 | This file — update after every chat |
-| index.html                 | Main diagnostic app |
-| app.js                     | Diagnostic engine, Freemium object |
-| auth.js                    | Shared auth module — Auth object |
-| fleet.html                 | Fleet dashboard (own auth; gating behind FLEET_GATING_ENABLED) |
-| landing.html               | Landing page |
-| admin.html                 | Admin dashboard — TO BE BUILT |
-| agnosticParser2.js         | Agnostic file parser |
-| multiChannel.js            | Multi-channel analysis |
-| agnosticParser.css         | Parser styles |
-| axiomanare-proxy.js        | CF Worker — Claude + embed + RAG + Stripe + cron |
-| ISO_10816_Chart_colour.pdf | ISO zone reference |
-| Balancing_Report_K394.pdf  | Confirmed imbalance case study |
-| rls_foundation_v2.sql      | RLS migration (utility script, run on prod — keep for record) |
+| File | Purpose |
+|---|---|
+| CONTEXT.md | This file — update after every chat |
+| DECISIONS.md | Guardrails + rationale — read Part A every session |
+| STATUS.md | Session handover, anchors, next tasks |
+| ARCHITECTURE.md | How it's built |
+| DEPLOY_CHECKLIST.md | Run after every push |
+| index.html | Main diagnostic app — cream/light theme as of 6 Jul 2026 |
+| app.js | Diagnostic engine, Freemium object |
+| auth.js | Shared auth module |
+| fleet.html | Fleet dashboard (own auth; gating behind flag) |
+| admin.html | Admin dashboard — status unverified, don't assume built |
+| agnosticParser2.js, multiChannel.js | Parser + multi-channel logic |
+| axiomanare-proxy.js | CF Worker source |
+| rls_foundation_v2.sql | RLS migration (utility, keep for record) |
 
 ---
 
-## How To Use This Project
-1. Always read CONTEXT.md first before writing any code.
-2. One chat per work stream (naming below).
-3. Update CONTEXT.md at end of each chat; re-upload to Project Knowledge;
-   commit to repo.
-
-### Chat Naming Convention
-"Schema — …", "Auth — …", "Payments — …", "Gating — …", "Landing — …",
-"ML — …", "RAG — …", "Twin — …", "Ops — …", "Security — …", "Admin — …",
-"UI — …", "Data — KB …", "Stress — …"
-
-### Session Handoff Template
+## Session Log — 2 Jul 2026 (Ops — repo ownership correction)
 ```
-Completed this session: [...]
-Files changed: [...]
-Latest commit: [hash]
-Next session should: [...]
+- Hit a live 404 at esimconnect.github.io/AxiomAnare while resuming stress
+  testing. Traced: github.com/esimconnect/AxiomAnare redirects to the real
+  owner, github.com/KairosAxiom/AxiomAnare. esimconnect was never the true
+  owner — a stale name propagated from an old saved Project Instructions
+  draft into CONTEXT.md and ARCHITECTURE.md.
+- README.md points to a third, also-dead URL (limykdavid-maker.github.io/
+  axiomanare) — separate open task.
+- Confirmed real working URL: https://kairosaxiom.github.io/AxiomAnare
+Next session should: fix README's stale link; once new sensor CSV is
+available, sanity-check it before running through the live app; re-verify
+admin.html's actual state before assuming any status.
 ```
 
----
-
-## Session Log — 13 Apr 2026 (Data — KB + ML population)
-```
-- CWRU .mat dataset downloaded — 109 files, 0 failed
-- cwru_label_map.json matches download filenames
-- NASA IMS 3rd_test deferred (ZIP corrupt)
-- Reports 007–009 anonymised .md (pharma plant, Apr 2023)
-Latest commit: 20ca27f
-```
-
-## Session Log — 13 Apr 2026 (Schema — profiles + twins + case_library)
-```
-- Full Supabase schema migration run (NOTE: this was the uncommitted utility
-  script — it created profiles, asset_twins, case_library, knowledge_chunks,
-  usage_log, subscription_events in prod but was never committed to repo)
-- Enums: tier_name, subscription_status, fault_class, iso_zone
-- Triggers: handle_new_user, handle_updated_at
-- Functions: get_user_tier, get_asset_allowance, increment_analyses_used
-- RLS enabled on new tables (but with OPEN policies — see 22 May correction)
-- nvr_records: feature_vector, user_confirmed, confirmed_fault, twin_deviation
-- Note: organisations flagged UNRESTRICTED (closed 22 May)
-Latest commit: 20ca27f
-```
-
-## Session Log — 13 Apr 2026 (Auth — modal)
-```
-- auth.js built (signUp/In/Out, getSession, getTier, getProfile,
-  incrementAnalysesUsed, tierAnalysisLimit)
-- Auth/Subscribe modal built dynamically inside auth.js
-- Nav wired: nav-login-btn, nav-subscribe-btn, nav-user-btn
-Latest commit: a0411f4
-```
-
-## Session Log — 14 Apr 2026 (RAG — wiring + production test)
-```
-- CF Worker: POST /embed (Voyage) + POST /rag (Supabase RPC)
-- Env vars: VOYAGE_API_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL
-- Worker version 1ffa12d1-...
-- app.js: ragQuery/buildRagContext/streamClaude with KB injection
-- match_knowledge_chunks recreated SECURITY DEFINER
-- Production test: /embed /rag /v1/messages all 200
-Latest commit: a10b773
-```
-
-## Session Log — 15 Apr 2026 (Data — KB CM Summaries)
-```
-- 8 XLSX CM tables anonymised → MD (CM_SiteA/B/C)
-- 40 new chunks embedded; total KB 109
-- CMAPSSData.zip assessed, skipped (not relevant)
-Latest commit: 1067951
-```
-
-## Session Log — 18 Apr 2026 (Data — KB + ML continued)
-```
-- CWRU YouTube transcript analysed (Amir Resza)
-- Implementation validated; CWRU_Dataset_Overview.md committed
-Latest commit: 1547bc4
-```
-
-## Session Log — 20 Apr 2026 (Data — KB documents)
-```
-- Scale-Fractal DFA paper EXCLUDED; SKF Install + Handbook INCLUDED;
-  VCAT Reference INCLUDED
-Latest commit: c95c2e3
-```
-
-## Session Log — 21 Apr 2026 (UI — animated logo + responsive)
-```
-- Animated canvas logo (3 gears + green sine), replaced static SVG
-- window load guard fixes animation on GitHub Pages
-- Responsive: tablet ≤900, mobile ≤600
-Latest commit: 46810ec
-```
-
-## Session Log — 21 Apr 2026 (Payments — Stripe integration)
-```
-- /create-checkout-session + /stripe-webhook routes
-- auth.js _doSignup (Supabase → Stripe), _handlePaymentReturn, toast
-- PayPal deferred
-Latest commit: 286d50d
-```
-
-## Session Log — 24 Apr 2026 (Gating — Freemium tier sync)
-```
-- FREE_ANALYSIS_LIMIT confirmed 5
-- Freemium.isPro() reads ax_tier; syncTier() async after auth.js load
-- index.html: syncTier() 200ms after auth.js
-Latest commit: 76f681a
-```
-
-## Session Log — 18 May 2026 (Ops — Supabase keep-alive cron)
-```
-- Triggered by Supabase 7-day pause warning
-- scheduled() handler added to worker; GET /assets?limit=1
-- Cron "0 9 */3 * *"; Workers Logs enabled
-- Bug: "*/3" inside /** JSDoc */ terminated comment — reworded to prose
-Latest commit: 4649bc0
-```
-
-## Session Log — 22 May 2026 (Ops — cron verify + Gating — fleet + Security — RLS + admin)
+## Session Log — 6 Jul 2026 (UI — cosmetic theme conversion, cross-project
+## confusion resolved, doc drift corrected)
 ```
 Completed this session:
-  OPS — keep-alive cron verified:
-    - Cloudflare Observability showed "keepalive 200 @ 2026-05-19T09:00:11.867Z",
-      0 errors, firing at 09:00 UTC. 18 May handoff item closed.
-
-  GATING — fleet.html tier gating (committed):
-    - Confirmed Auth.getTier() returns 'pro'/'fleet_starter'/'fleet_pro'/'free'
-      (never null).
-    - KEY FINDING: fleet.html uses own auth (raw fetch, _session, ax_session) —
-      no supabase-js session. Auth.getTier() would lock out paying fleet users.
-    - Added getUserTier() (bearer-token sbGet on profiles), isFleetTier(),
-      enforceFleetGate(), #upgrade-screen overlay. Gated both entry points.
-    - PARKED behind const FLEET_GATING_ENABLED = false (fleet.html ~line 726).
-    - Syntax verified (node --check). Commit 0df5503.
-
-  SECURITY — RLS foundation (rls_foundation_v2.sql, run on prod, success):
-    - Discovered schema drift: live DB has 12 tables; profiles + 5 others were
-      from the uncommitted 13 Apr migration; fault_detections + zone_progressions
-      in schema file but NOT in prod. Stripe columns (stripe_customer_id,
-      stripe_sub_id) ALREADY present (pending item was already done).
-    - Earlier "RLS hardened" claim was FALSE — open USING(true) beta policies
-      live, organisations UNRESTRICTED.
-    - Added profiles.is_admin. Helper fns current_org_id()/is_admin()
-      (SECURITY DEFINER, search_path set, granted anon+authenticated+service_role).
-    - Column-guard trigger on profiles (blocks tier/is_admin/org_id changes;
-      exempts service_role + admin).
-    - Dropped legacy policies; installed org-scoped + admin policies on all 12
-      tables. Migration table-existence-aware (skips missing tables).
-    - WIPED test data (Option A): TRUNCATE assets/baselines/nvr_records.
-    - Validated in sandbox Postgres 16 (12-table replica) before prod: cross-org
-      isolation, escalation block, service_role tier update, admin visibility,
-      anon bearing read, anon customer-data lock — all pass. Caught + fixed 2
-      GRANT bugs (helpers needed service_role + anon execute) — this is v2.
-    - Confirmed on prod: policy counts per table correct, organisations no longer
-      UNRESTRICTED, is_admin column present.
-
-  ADMIN bootstrap:
-    - handle_new_user trigger CONFIRMED firing (davidlimyk@gmail.com signup
-      created a profiles row, tier=free).
-    - Bootstrapped first admin: davidlimyk@gmail.com → is_admin=true.
-      Required DISABLE TRIGGER (console/postgres does NOT bypass the guard).
-    - Note: davidlimyk@gmail.com org_id likely NULL (created via Subscribe path).
-
-  CORRECTIONS LOGGED (see Known Issues):
-    - auth.js tierAnalysisLimit() still returns 2 (should be 5)
-    - badge pluralisation at count=1 ("1 free analysis")
-    - prices HARDCODED $49/$99/$299 in modal vs CONTEXT "TBD"
-    - verify free-flow writes to nvr_records/fault_signatures under new RLS
+  - Cross-project mixup caught and resolved: a Cloudflare Pages link
+    (axiomsensa-frontend.pages.dev) initially presented as "the last link
+    we used" for LynxEye turned out to belong to a genuinely separate
+    project, AxiomSensa. Confirmed by David: AxiomSensa and Juzgo (formerly
+    eSimconnect) are two other, distinct projects with their own project
+    folders — not to be conflated with LynxEye again. This also explains
+    the historical "esimconnect" org name: it was this project's actual old
+    repo home before the three projects were split into separate folders,
+    not a random wrong guess.
+  - Reviewed an externally-built UI mockup (different AI platform) the
+    person was evaluating as inspiration. On inspection it had no real
+    functionality — upload handler never parsed files, all charts were
+    hardcoded/randomized canvas draws, a "40+ vendor format" claim had zero
+    parsing code behind it. Flagged as a design-only reference, not
+    something with substance to port.
+  - Of four UI patterns drafted from that reference (asset tree, tabbed
+    chart switcher, KPI strip, per-chart metrics strip), audited the REAL
+    index.html before building anything further and found two were already
+    implemented, better: the Fault Severity Radar chart (ISO 13379-1 cited)
+    and detailed per-chart metrics (FFT legend, fault-classification bars,
+    driving-feature readout, RUL confidence interval) already exist.
+  - Implemented, against the real index.html:
+    1. KPI glance strip — new row (Health Index / Overall Vibration / ISO
+       Zone / Diagnostic Confidence) added above the existing Management
+       Summary Card, not replacing it. Uses "—" placeholders matching the
+       file's existing convention; no values invented. IDs: kpi-health,
+       kpi-vib, kpi-zone, kpi-conf (+ -trend/-sub/-tier companions) — need
+       wiring in app.js's existing render function.
+    2. Full color-scheme conversion, dark navy → cream/light. Converted all
+       16 :root variables plus 43 hardcoded hex literals and 71 rgba()
+       literals found OUTSIDE the variables (pre-existing drift — several
+       were near-duplicate colors of the real variables, e.g. three
+       different "greens" in simultaneous use: --green, a value in
+       .mgmt-card.green, and a third in the print stylesheet). The print
+       stylesheet (@media print, lines ~313–486) was deliberately left
+       untouched — already correctly light-themed for printed reports.
+    3. Verified: extracted all 4 inline <script> blocks, ran `node --check`
+       on each — all pass, no syntax breakage from the conversion.
+  - Corrected the documented CSS variable count from 10 to the actual 16.
+  - Audited emoji usage: 17 HTML character entities present in the live UI
+    (mgmt-icon, early-warning banner, buttons, etc.), directly against the
+    documented "no emojis in diagnostic output" standard. NOT fixed this
+    session — David explicitly asked to defer cleanup until after current
+    heavy-lift work, logged here so it's tracked, not forgotten.
+  - Caught, twice more, the same stale saved Project Instructions draft
+    being pasted in (esimconnect, "2 analyses," tables marked "planned"
+    that are live, 10-var CSS list). Also caught: the DECISIONS.md
+    re-uploaded this session was an older version missing A10, A11, and
+    the Part C rejected-patterns log that the 19 Jun session had already
+    added — used the fuller existing version as the base instead.
+  - Formalized DECISIONS A12 for real (mandatory input metadata, no silent
+    defaults) — it had been referenced as "proposed" in STATUS.md,
+    ARCHITECTURE.md, and the stress-test manifest for weeks but was never
+    actually written into DECISIONS.md's guardrails list. Fixed.
 
 Files changed:
-  - fleet.html (committed 0df5503)
-  - rls_foundation_v2.sql (utility, run on prod — not committed yet)
+  - index.html (color scheme + KPI strip) — NOT YET COMMITTED, exists only
+    as a file David has locally from this session; push it to the repo.
   - CONTEXT.md (this rewrite)
+  - DECISIONS.md (formalized A12; added Part B/C entries for the color
+    governance drift finding and the emoji-deferral decision)
 
-Latest code commit: 0df5503
+Latest code commit: 0df5503 (unchanged — this session's index.html edit is
+not yet pushed)
 
 Next session should:
-  - Build admin.html (admin v1): gate on is_admin(); subscriber list (email,
-    tier, status, analyses_used, signup date); actions = set tier + reset
-    analysis count. Reuse index.html CSS vars + Auth object. Config-flag editing
-    and analytics are v2.
-  - Then stress testing (PHASE 1.5): start with anonymous free-flow under RLS
-    and the free-flow nvr_records/fault_signatures write check.
-  - Commit rls_foundation_v2.sql + this CONTEXT.md to repo.
+  - Commit the new index.html to the repo (color scheme + KPI strip).
+  - Wire the new kpi-* element IDs to real computed values in app.js.
+  - Resume Phase 1.5 stress testing priorities from the 2 Jul handoff.
+  - When doing later housekeeping: fix the 17 emoji instances, and consider
+    a pass replacing hardcoded color literals with proper var() references.
+```
+
+## Session Log — 20 Jul 2026 (Rebrand — AxiomAnare → LynxEye)
+```
+Product renamed AxiomAnare → LynxEye (display name only). Trademark + domain
+(lynxeye.io) cleared by David before starting. Precedent: the earlier
+esimconnect → Juzgo rename, which was also a display-name change (same GitHub
+repo kept, same Supabase project ref, only the human-readable label flipped).
+
+Scope decision — DISPLAY NAME ONLY. Internal identifiers deliberately NOT
+touched (renaming them is user-invisible and breaks live state):
+  - Supabase project ref zjfhxutcvjxootoekade (immutable) — only the dashboard
+    DISPLAY label should be renamed to LynxEye (do this in Supabase UI; not a
+    code change). Ref, anon key, all connection strings unchanged.
+  - localStorage keys ax_tier / ax_pro / ax_analysis_count / ax_channels /
+    ax_hz / ax_output_tokens / ax_tokens — kept (renaming logs out all users,
+    resets free counters).
+  - axiomPrint() function + its onclick caller in index.html — kept.
+  - Cloudflare Worker restless-tree-eac8 + PROXY_BASE — kept (worker names are
+    invisible; confirmed restless-tree-eac8 is the LIVE proxy via PROXY_BASE in
+    app.js — the other two workers claude-proxy and axiomanare-proxy are NOT
+    referenced; axiomanare-proxy is stale, safe to delete later).
+  - GitHub repo kept as AxiomAnare (NOT renamed) → live URL stays
+    kairosaxiom.github.io/AxiomAnare. If repo is later renamed or lynxeye.io
+    custom domain is added, that's a follow-up (update URLs + Supabase Auth
+    redirect allow-list + Worker CORS + Stripe success/cancel URLs then).
+
+Code changes (all 4 files pass node --check; inline <script> blocks re-checked):
+  - index.html: title, print footers (@page + data-filename), print
+    disclaimer, header wordmark (now Lynx #7bbde8 light / Eye #1f6fb2 dark —
+    colors FLIPPED from old Axiom-dark/Anare-light), persona label
+    "LynxEye Assist", AND the nav logo: the old gray-gears + green-scope-wave
+    <canvas id="nav-logo"> animation was REPLACED with an inline animated SVG
+    of the new eye+2-gears mark (same id, so the L270/L290 responsive CSS still
+    applies; reduced-motion freeze included). Dead canvas <script> block removed.
+  - app.js: upgrade-modal wordmark, RAG-prompt product name, AI system-prompt
+    persona ("You are LynxEye Assist"), free-trial watermark, report print
+    header (ph-name), dev comment. axiomPrint kept.
+  - fleet.html: title, 2× login-app-name, fleet-nav-name.
+  - admin.html: title, 2× headings, body text.
+  - AI persona AxiomAssist → "LynxEye Assist" (report header + system prompt).
+
+Logo assets produced (in outputs, need adding to repo):
+  - lynxeye-logo.svg (animated, prefers-reduced-motion freeze) — web/login use
+  - lynxeye-logo-static.svg (gears frozen mid-mesh) — print/PDF/favicon use
+  Mark = open almond eye (two light-blue lid strokes) + two dark-blue gears
+  meshing at true pitch distance, wordmark Lynx(light)/Eye(dark) beneath.
+
+Docs (this pass): product name → LynxEye in live prose across CONTEXT /
+DECISIONS / STATUS / ARCHITECTURE / DEPLOY_CHECKLIST. Preserved as-is: all
+esimconnect "don't use this name" warnings, the 404-incident history, the
+stale-README-link debt notes, session logs. Corrected 3 stale live URLs
+(esimconnect.github.io → kairosaxiom.github.io) + the stale repo-owner line in
+ARCHITECTURE (was esimconnect, now KairosAxiom). Local disk paths
+(D:/E:\Kairos\AxiomAnare\...) and filenames (axiomanare_schema.sql,
+axiomanare-proxy.js) kept — those are real folder/file names, not the product.
+
+STILL OPEN / next session:
+  - Rename the Supabase project DISPLAY label to LynxEye in the dashboard
+    (30-sec UI action, ref untouched — same as was done for Juzgo).
+  - Fix README.md's stale live link (limykdavid-maker... 404) — README not in
+    this project bundle, do it in the repo directly.
+  - Add lynxeye-logo.svg / -static.svg to the repo; wire favicon to the static
+    one; point print/PDF header at the static SVG if desired.
+  - Branch + DEPLOY_CHECKLIST pass before merging to main. No diagnostic/FFT/
+    scoring logic changed, so CWRU re-run not strictly required, but eyeball one
+    generated AI report to confirm "LynxEye Assist" renders and streaming works
+    (persona change touches the AI prompt path).
+  - Decide later: rename GitHub repo + add lynxeye.io custom domain (with the
+    Auth/CORS/Stripe redirect updates that entails).
 ```

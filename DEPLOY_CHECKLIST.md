@@ -1,4 +1,4 @@
-# AxiomAnare — Post-Deploy Test Checklist
+# LynxEye — Post-Deploy Test Checklist
 
 > Run EVERY time after `git push`, once GitHub Pages redeploys (~60s) and you've hard-refreshed (Ctrl+Shift+R).
 > This is your verification loop. Don't trust "it looks fine."
@@ -20,7 +20,7 @@ node --check app.js     # catches the syntax error that silently kills the whole
 ---
 
 ## 0. Did it even load?
-- [ ] Open https://esimconnect.github.io/AxiomAnare — Console shows **zero red errors** on load.
+- [ ] Open https://kairosaxiom.github.io/AxiomAnare — Console shows **zero red errors** on load.
 - [ ] Upload drop zone + Analyse button present.
 
 ## 1. Single-channel happy path
@@ -52,6 +52,22 @@ node --check app.js     # catches the syntax error that silently kills the whole
 ## 7. CWRU benchmark (after ANY diagnostic/FFT/scoring change)
 - [ ] 97_Normal ✓ · 105_IR ✓ · 118_Ball (gap) · 130_OR ✓ · 234_OR ✓
 - [ ] **Score unchanged or improved. If it dropped, the change regressed the engine — revert.**
+
+## 8. Motor Fault Sample smoke test (after ANY diagnostic/FFT/scoring change)
+> ⚠️ NARROWER than CWRU (§7) — single machine, single day, no nameplate RPM/bearing model
+> available (genuinely unknown, not assumed). Only checks the high-level verdict
+> (abnormal vs healthy); do NOT treat any specific cited fault frequency or ISO clause as
+> validated by this fixture. Files: `Data_Sets/motor_fault_sample/` (18 chunked CSVs, see
+> `stress_test_manifest.json`). Enter any placeholder RPM to get through the upload form.
+- [ ] `motor_fault_unbalance_chunk01.csv` → flagged abnormal (NOT healthy/Zone A)
+- [ ] `motor_fault_balanced_chunk01.csv` → classified healthy / ISO Zone A-B, no fault flagged
+- [ ] `motor_fault_shutdown_chunk01.csv` → transient capture; should NOT be force-classified as a
+      confident steady-state fault (ideally flagged as low-quality/inconsistent reading once
+      DECISIONS A10 data-quality tiering is built — until then, just confirm it doesn't crash or
+      silently misreport as a clean healthy/fault reading)
+- [ ] **Verdict unchanged or improved vs. last run. If it regressed, the change broke basic
+      abnormal/healthy separation — revert.** (Treat this as a smoke test, not proof of
+      diagnostic accuracy — see scope_and_limits in the manifest.)
 
 ---
 
