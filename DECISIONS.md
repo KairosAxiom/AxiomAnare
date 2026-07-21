@@ -190,6 +190,28 @@ asked for it to be adopted using LynxEye's own real design tokens, not the other
 16 `:root` variables plus the hardcoded literal colors found duplicating them (see PART C entry below).
 Explicitly scoped as cosmetic only — no process, pipeline, or backend logic was touched.
 
+### Why the repo, local folders, and Supabase ref kept the AxiomAnare name after the LynxEye rebrand (20 Jul 2026)
+The product rebranded AxiomAnare → **LynxEye** (trademark + domain lynxeye.io cleared first). The rebrand
+was scoped as **display-name-only**, following the earlier esimconnect → Juzgo precedent, which was also a
+display-name change (same repo, same Supabase project ref, only the human-readable label flipped).
+Deliberately NOT renamed, because each is invisible to users and renaming risks breaking live state for
+zero user benefit:
+- **GitHub repo** stays `AxiomAnare` (live URL `kairosaxiom.github.io/AxiomAnare`). Renaming would change
+  the URL and require updating every hardcoded link; a custom domain (lynxeye.io) would make the repo name
+  moot anyway, so it's deferred to if/when that domain is wired up.
+- **Local disk folders** stay `AxiomAnare` — they track the *repo* (git uses `.git/config` remote, not the
+  folder name), and CONTEXT/ARCHITECTURE document those exact paths across two machines (D: office /
+  E: home). Renaming folders would re-introduce doc drift and break `cd` habits/scripts. The triple-nesting
+  `AxiomAnare\axiomanare\AxiomAnare` is a harmless clone artifact — only a fresh re-clone would flatten it,
+  which is a separate deliberate task, not bundled with a rename.
+- **Supabase project ref** `zjfhxutcvjxootoekade` is immutable — only the dashboard *display label* was
+  renamed to LynxEye. Anon key, URL, RLS, connection strings all key off the ref, not the label.
+- **Cloudflare worker** `restless-tree-eac8` unchanged — worker names are invisible and `PROXY_BASE` +
+  the Stripe webhook depend on it.
+**The point:** brand-facing surfaces became LynxEye; private plumbing kept the AxiomAnare name so the repo,
+folders, and ref all still agree with each other. The naming mismatch (product ≠ repo/folders) is
+intentional and documented — see CONTEXT.md → Repository section for the one-line map.
+
 ### [ADD future decisions here — date, what, why]
 
 ---
@@ -203,6 +225,11 @@ Explicitly scoped as cosmetic only — no process, pipeline, or backend logic wa
 - Re-opening RLS to `USING (true)` to unblock something → never; fix the auth path (A8).
 - Destructive SQL with no backup on Free tier → export first (A9).
 - Drive/machine drift (D: office, E: home) → paths vary; don't hardcode one.
+- **Naming mismatch is INTENTIONAL, don't "fix" it:** product = LynxEye, but repo + local folders +
+  Supabase ref all still say/use AxiomAnare (kept unchanged in the 20 Jul rebrand — see Part B above).
+  Future sessions/self: if the folder or repo name "looks wrong" vs the LynxEye branding, it is NOT drift —
+  do not rename repo/folders/ref to match the product. Map: product = LynxEye · repo + folders = AxiomAnare
+  · Supabase ref = zjfhxutcvjxootoekade · worker = restless-tree-eac8. One project.
 - **Color variable governance drift (found 6 Jul 2026):** despite CSS variables existing for exactly
   this purpose, index.html accumulated 43 hardcoded hex literals and 71 hardcoded rgba() literals over
   time, several of them near-duplicate colors of the real variables (three different "greens" were in

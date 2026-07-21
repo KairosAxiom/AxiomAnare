@@ -37,6 +37,24 @@ RLS-protected data in Supabase. Goal: a commercially launchable freemium SaaS
 - Branch: main
 - Stable tag: v1.0-stable — commit 4ef5762
 
+> **⚠️ Folder-vs-brand naming — READ IF THE PATHS LOOK WRONG.** The *product*
+> rebranded to **LynxEye** (20 Jul 2026), but the **GitHub repo, the local disk
+> folders, and the Supabase project ref were all deliberately kept unchanged** —
+> so the names DON'T all say "LynxEye", and that is intentional, not drift:
+>   - **Product / brand name:** LynxEye (what users, UI, reports, logo show)
+>   - **GitHub repo:** still `AxiomAnare` → live URL `kairosaxiom.github.io/AxiomAnare`
+>     (repo was NOT renamed; GitHub redirect + "only display name changed" decision)
+>   - **Local folders:** still `AxiomAnare` — they match the *repo*, not the product.
+>     Path `…\Kairos\AxiomAnare\axiomanare\AxiomAnare` — the triple-nesting is a
+>     harmless clone artifact, not three different things.
+>   - **Supabase project ref:** still `zjfhxutcvjxootoekade` (immutable; only the
+>     dashboard *display label* was renamed to LynxEye).
+>   - **Cloudflare worker:** still `restless-tree-eac8` (invisible; not renamed).
+>
+> **One-line map:** product = LynxEye · repo + folders = AxiomAnare · Supabase ref =
+> zjfhxutcvjxootoekade · worker = restless-tree-eac8. **All the same one project.**
+> See DECISIONS.md Part B ("Why the repo/folders/ref kept the AxiomAnare name").
+
 ### Stale-draft figures to never reintroduce
 A saved Project Instructions draft has been pasted into chat multiple times
 carrying facts that are wrong or superseded. Do not copy these into a new
