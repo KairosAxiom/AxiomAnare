@@ -130,33 +130,51 @@ const SB = {
 
 const CONFIG = {
   iso_machine_classes: [
-    { class_id:"cls_i",    display_label:"Class I",        iso_standard_ref:"ISO 10816-3:2009", machine_type_desc:"Small Machines",          power_kw_desc:"Up to 15 kW",      power_kw_min:0,   power_kw_max:15,   mounting_type:"Rigid Mount"    },
+    { class_id:"cls_i",    display_label:"Class I (legacy)", iso_standard_ref:"ISO 2372:1974 (legacy — <=15 kW is outside ISO 10816-3 scope)", machine_type_desc:"Small Machines",          power_kw_desc:"Up to 15 kW",      power_kw_min:0,   power_kw_max:15,   mounting_type:"Rigid Mount"    },
     { class_id:"cls_ii",   display_label:"Class II",       iso_standard_ref:"ISO 10816-3:2009", machine_type_desc:"Medium Machines",         power_kw_desc:"15 - 300 kW",      power_kw_min:15,  power_kw_max:300,  mounting_type:"Rigid Mount"    },
     { class_id:"cls_ii_f", display_label:"Class II (Flex)",iso_standard_ref:"ISO 10816-3:2009", machine_type_desc:"Medium Machines",         power_kw_desc:"15 - 300 kW",      power_kw_min:15,  power_kw_max:300,  mounting_type:"Flexible Mount" },
     { class_id:"cls_iii",  display_label:"Class III",      iso_standard_ref:"ISO 10816-3:2009", machine_type_desc:"Large Machines",          power_kw_desc:"Above 300 kW",     power_kw_min:300, power_kw_max:50000,mounting_type:"Rigid Mount"    },
     { class_id:"cls_iv",   display_label:"Class IV",       iso_standard_ref:"ISO 10816-3:2009", machine_type_desc:"Large Machines",          power_kw_desc:"Above 300 kW",     power_kw_min:300, power_kw_max:50000,mounting_type:"Flexible Mount" }
   ],
+  // ── ISO 10816-3:2009 zone boundaries — CORRECTED against the published
+  //    standard (Table A.1 = Group 1 large >300 kW; Table A.2 = Group 2 medium
+  //    15–300 kW; each split into Rigid / Flexible support columns).
+  //    Verified values (r.m.s. velocity, mm/s), A/B · B/C · C/D:
+  //      Group 1 Rigid    2.3 · 4.5 · 7.1     Group 1 Flexible 3.5 · 7.1 · 11.0
+  //      Group 2 Rigid    1.4 · 2.8 · 4.5     Group 2 Flexible 2.3 · 4.5 · 7.1
+  //    Prior CONFIG used ISO 2372 legacy bands + fabricated "Table 1 S5.x"
+  //    clause suffixes; both corrected here. NOTE: this changes zone output —
+  //    re-run CWRU (DECISIONS A6) after this edit.
+  //
+  //    cls_i (<=15 kW) is OUT OF ISO 10816-3 SCOPE (standard starts >15 kW).
+  //    Its 0.71/1.8/4.5 bands are ISO 2372:1974 Class I (withdrawn 1995).
+  //    Values kept per decision; citation corrected to name the true source
+  //    and flagged. Class→Group mapping applied:
+  //      cls_ii  (15–300, rigid)  -> Group 2 Rigid  (Table A.2)
+  //      cls_ii_f(15–300, flex)   -> Group 2 Flex   (Table A.2)
+  //      cls_iii (>300,  rigid)   -> Group 1 Rigid  (Table A.1)
+  //      cls_iv  (>300,  flex)    -> Group 1 Flex   (Table A.1)
   iso_severity_zones: [
-    { zone_id:"zi_a",  class_id:"cls_i",    zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:0.71,  action_required:"No action required. Newly commissioned or well-maintained.",                     iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.1" },
-    { zone_id:"zi_b",  class_id:"cls_i",    zone_label:"B", rms_lower_mm_s:0.71, rms_upper_mm_s:1.8,   action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.2" },
-    { zone_id:"zi_c",  class_id:"cls_i",    zone_label:"C", rms_lower_mm_s:1.8,  rms_upper_mm_s:4.5,   action_required:"Unsatisfactory for long-term operation. Corrective action required.",            iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.3" },
-    { zone_id:"zi_d",  class_id:"cls_i",    zone_label:"D", rms_lower_mm_s:4.5,  rms_upper_mm_s:99999, action_required:"Dangerous. Risk of machine damage. Immediate shutdown warranted.",               iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.4" },
-    { zone_id:"zii_a", class_id:"cls_ii",   zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:2.3,   action_required:"No action required. Newly commissioned or well-maintained.",                     iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.1" },
-    { zone_id:"zii_b", class_id:"cls_ii",   zone_label:"B", rms_lower_mm_s:2.3,  rms_upper_mm_s:7.1,   action_required:"Satisfactory for continuous operation. Maintenance planning recommended.",        iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.2" },
-    { zone_id:"zii_c", class_id:"cls_ii",   zone_label:"C", rms_lower_mm_s:7.1,  rms_upper_mm_s:11.2,  action_required:"Unsatisfactory - acceptable for short periods only. Corrective action required.", iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.3" },
-    { zone_id:"zii_d", class_id:"cls_ii",   zone_label:"D", rms_lower_mm_s:11.2, rms_upper_mm_s:99999, action_required:"Dangerous. Risk of machine damage. Immediate shutdown warranted.",               iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.4" },
-    { zone_id:"ziif_a",class_id:"cls_ii_f", zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:3.5,   action_required:"No action required.",                                                           iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.1" },
-    { zone_id:"ziif_b",class_id:"cls_ii_f", zone_label:"B", rms_lower_mm_s:3.5,  rms_upper_mm_s:11.2,  action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.2" },
-    { zone_id:"ziif_c",class_id:"cls_ii_f", zone_label:"C", rms_lower_mm_s:11.2, rms_upper_mm_s:18.0,  action_required:"Unsatisfactory - corrective action required.",                                  iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.3" },
-    { zone_id:"ziif_d",class_id:"cls_ii_f", zone_label:"D", rms_lower_mm_s:18.0, rms_upper_mm_s:99999, action_required:"Dangerous. Immediate shutdown warranted.",                                      iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.4" },
-    { zone_id:"ziii_a",class_id:"cls_iii",  zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:3.5,   action_required:"No action required.",                                                           iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.1" },
-    { zone_id:"ziii_b",class_id:"cls_iii",  zone_label:"B", rms_lower_mm_s:3.5,  rms_upper_mm_s:11.2,  action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.2" },
-    { zone_id:"ziii_c",class_id:"cls_iii",  zone_label:"C", rms_lower_mm_s:11.2, rms_upper_mm_s:18.0,  action_required:"Unsatisfactory - corrective action required.",                                  iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.3" },
-    { zone_id:"ziii_d",class_id:"cls_iii",  zone_label:"D", rms_lower_mm_s:18.0, rms_upper_mm_s:99999, action_required:"Dangerous. Immediate shutdown warranted.",                                      iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.4" },
-    { zone_id:"ziv_a", class_id:"cls_iv",   zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:3.5,   action_required:"No action required.",                                                           iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.1" },
-    { zone_id:"ziv_b", class_id:"cls_iv",   zone_label:"B", rms_lower_mm_s:3.5,  rms_upper_mm_s:14.0,  action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.2" },
-    { zone_id:"ziv_c", class_id:"cls_iv",   zone_label:"C", rms_lower_mm_s:14.0, rms_upper_mm_s:22.4,  action_required:"Unsatisfactory - corrective action required.",                                  iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.3" },
-    { zone_id:"ziv_d", class_id:"cls_iv",   zone_label:"D", rms_lower_mm_s:22.4, rms_upper_mm_s:99999, action_required:"Dangerous. Immediate shutdown warranted.",                                      iso_clause_ref:"ISO 10816-3:2009 Table 1 S5.4" }
+    { zone_id:"zi_a",  class_id:"cls_i",    zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:0.71,  action_required:"No action required. Newly commissioned or well-maintained.",                     iso_clause_ref:"ISO 2372:1974 Class I (legacy — outside ISO 10816-3 scope)" },
+    { zone_id:"zi_b",  class_id:"cls_i",    zone_label:"B", rms_lower_mm_s:0.71, rms_upper_mm_s:1.8,   action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 2372:1974 Class I (legacy — outside ISO 10816-3 scope)" },
+    { zone_id:"zi_c",  class_id:"cls_i",    zone_label:"C", rms_lower_mm_s:1.8,  rms_upper_mm_s:4.5,   action_required:"Unsatisfactory for long-term operation. Corrective action required.",            iso_clause_ref:"ISO 2372:1974 Class I (legacy — outside ISO 10816-3 scope)" },
+    { zone_id:"zi_d",  class_id:"cls_i",    zone_label:"D", rms_lower_mm_s:4.5,  rms_upper_mm_s:99999, action_required:"Dangerous. Risk of machine damage. Immediate shutdown warranted.",               iso_clause_ref:"ISO 2372:1974 Class I (legacy — outside ISO 10816-3 scope)" },
+    { zone_id:"zii_a", class_id:"cls_ii",   zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:1.4,   action_required:"No action required. Newly commissioned or well-maintained.",                     iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Rigid), Zone A" },
+    { zone_id:"zii_b", class_id:"cls_ii",   zone_label:"B", rms_lower_mm_s:1.4,  rms_upper_mm_s:2.8,   action_required:"Satisfactory for continuous operation. Maintenance planning recommended.",        iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Rigid), Zone B" },
+    { zone_id:"zii_c", class_id:"cls_ii",   zone_label:"C", rms_lower_mm_s:2.8,  rms_upper_mm_s:4.5,   action_required:"Unsatisfactory - acceptable for short periods only. Corrective action required.", iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Rigid), Zone C" },
+    { zone_id:"zii_d", class_id:"cls_ii",   zone_label:"D", rms_lower_mm_s:4.5,  rms_upper_mm_s:99999, action_required:"Dangerous. Risk of machine damage. Immediate shutdown warranted.",               iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Rigid), Zone D" },
+    { zone_id:"ziif_a",class_id:"cls_ii_f", zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:2.3,   action_required:"No action required.",                                                           iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Flexible), Zone A" },
+    { zone_id:"ziif_b",class_id:"cls_ii_f", zone_label:"B", rms_lower_mm_s:2.3,  rms_upper_mm_s:4.5,   action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Flexible), Zone B" },
+    { zone_id:"ziif_c",class_id:"cls_ii_f", zone_label:"C", rms_lower_mm_s:4.5,  rms_upper_mm_s:7.1,   action_required:"Unsatisfactory - corrective action required.",                                  iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Flexible), Zone C" },
+    { zone_id:"ziif_d",class_id:"cls_ii_f", zone_label:"D", rms_lower_mm_s:7.1,  rms_upper_mm_s:99999, action_required:"Dangerous. Immediate shutdown warranted.",                                      iso_clause_ref:"ISO 10816-3:2009 Table A.2 (Group 2, Flexible), Zone D" },
+    { zone_id:"ziii_a",class_id:"cls_iii",  zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:2.3,   action_required:"No action required.",                                                           iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Rigid), Zone A" },
+    { zone_id:"ziii_b",class_id:"cls_iii",  zone_label:"B", rms_lower_mm_s:2.3,  rms_upper_mm_s:4.5,   action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Rigid), Zone B" },
+    { zone_id:"ziii_c",class_id:"cls_iii",  zone_label:"C", rms_lower_mm_s:4.5,  rms_upper_mm_s:7.1,   action_required:"Unsatisfactory - corrective action required.",                                  iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Rigid), Zone C" },
+    { zone_id:"ziii_d",class_id:"cls_iii",  zone_label:"D", rms_lower_mm_s:7.1,  rms_upper_mm_s:99999, action_required:"Dangerous. Immediate shutdown warranted.",                                      iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Rigid), Zone D" },
+    { zone_id:"ziv_a", class_id:"cls_iv",   zone_label:"A", rms_lower_mm_s:0,    rms_upper_mm_s:3.5,   action_required:"No action required.",                                                           iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Flexible), Zone A" },
+    { zone_id:"ziv_b", class_id:"cls_iv",   zone_label:"B", rms_lower_mm_s:3.5,  rms_upper_mm_s:7.1,   action_required:"Satisfactory for continuous operation.",                                        iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Flexible), Zone B" },
+    { zone_id:"ziv_c", class_id:"cls_iv",   zone_label:"C", rms_lower_mm_s:7.1,  rms_upper_mm_s:11.0,  action_required:"Unsatisfactory - corrective action required.",                                  iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Flexible), Zone C" },
+    { zone_id:"ziv_d", class_id:"cls_iv",   zone_label:"D", rms_lower_mm_s:11.0, rms_upper_mm_s:99999, action_required:"Dangerous. Immediate shutdown warranted.",                                      iso_clause_ref:"ISO 10816-3:2009 Table A.1 (Group 1, Flexible), Zone D" }
   ],
   fault_frequency_rules: [
 
@@ -1199,12 +1217,43 @@ async function runPipeline(raw, filename) {
     ? { type:'assumed', msg:'Assumed input — sample rate ('+sr+' Hz) was not detected in the file or hand-entered; it is a preset selected for analysis intent. Dependent frequency citations (BPFO/BPFI/BSF/FTF, shaft frequency) are unverified until a real sample rate is confirmed.' }
     : null;
 
+  // == A12 (generalised): unified ANALYSIS ASSUMPTIONS list ==
+  // Collects EVERY value the analysis rests on that was assumed rather than
+  // measured or user-entered, so the report can state them and the user can
+  // correct them in Step 2 and re-run. Two sources are merged:
+  //   (a) app.js's own sample-rate provenance (the A12 'preset' case above), and
+  //   (b) the parser's window.AG.assumptions (unit guesses, approximate
+  //       conversions, vendor-default sample rate) — see AG.assumptions contract.
+  // Each entry: { field, assumed, source, corrigible, hint }.
+  // An empty/absent AG.assumptions is treated as "parser surfaced none",
+  // NEVER as "safe" — this path (e.g. native MAT parsing) may bypass the parser
+  // entirely, so app.js always contributes its own sample-rate assumption here.
+  const analysisAssumptions = [];
+  if (sampleRateAssumed) {
+    analysisAssumptions.push({
+      field: 'sample_rate',
+      assumed: sr + ' Hz',
+      source: 'preset selected for analysis intent (not detected in file, not hand-entered)',
+      corrigible: true,
+      hint: 'Enter the real acquisition rate in Step 2 (Sampling Rate field) and re-run — every fault frequency (BPFO/BPFI/BSF/FTF, shaft) scales with it.'
+    });
+  }
+  try {
+    const parserAssumptions = (window.AG && Array.isArray(window.AG.assumptions))
+      ? window.AG.assumptions : [];
+    for (const pa of parserAssumptions) {
+      // Don't double-list sample rate if app.js already flagged it above.
+      if (pa && pa.field === 'sample_rate' && sampleRateAssumed) continue;
+      if (pa && pa.field && pa.assumed) analysisAssumptions.push(pa);
+    }
+  } catch (e) { /* parser channel optional — never block analysis on its absence */ }
+
   nvr = { filename, rms: rms.toFixed(3), peak: peak.toFixed(3), cf: cf.toFixed(2),
     dataTypes, dataBanner,
     kurt: kurt.toFixed(2), devSc: devSc.toFixed(2), devRow,
     zoneRow: finalZoneRow, trendRow,
     earlyWarn, faults: faults.length ? faults : allFaults.slice(0, CONFIG.fault_display_limit),
-    fftR, rulR: finalRulR, n, sr, srSource, sampleRateAssumed, sampleRateBanner, classRow, cu, shaftHz,
+    fftR, rulR: finalRulR, n, sr, srSource, sampleRateAssumed, sampleRateBanner, analysisAssumptions, classRow, cu, shaftHz,
     override, healthIdx,
     singleFile: history.length < 3,
     historyCount: history.length,
@@ -2351,6 +2400,20 @@ function plainFaultText(fault) {
 }
 // == END MANAGEMENT SUMMARY CARD ============================================
 
+// A12 (generalised): helpers for the consolidated assumptions note.
+// escapeHtmlAA is mandatory — assumption strings include file-derived column
+// names and could otherwise inject markup into the report.
+function escapeHtmlAA(s){
+  return String(s==null?'':s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function labelForAssumption(field){
+  return { sample_rate:'Sample rate', unit:'Signal unit',
+    unit_conversion:'Unit conversion', rpm:'Shaft speed (RPM)',
+    bearing:'Bearing model' }[field] || (field||'Input');
+}
+
 function renderResults(){
   const d=nvr;
 
@@ -2445,6 +2508,42 @@ function renderResults(){
       srBannerEl.style.display = 'flex';
     } else {
       srBannerEl.style.display = 'none';
+    }
+  }
+
+  // A12 (generalised): consolidated ANALYSIS ASSUMPTIONS note.
+  // One block listing EVERY assumed input (sample rate, unit, conversion, vendor
+  // default) with a plain-language "correct it in Step 2 and re-run" affordance.
+  // Uses its OWN element/class ('analysis-assumptions-banner') which — like
+  // 'sample-rate-banner' — must be EXEMPT from the print stylesheet's
+  // ".data-banner{display:none}" rule so it appears on printed/exported reports
+  // the engineer signs off on. See the HTML/CSS drop-in provided separately.
+  // STAGED CUTOVER: the standalone sample-rate-banner above is intentionally left
+  // in place until this consolidated note is verified on screen AND in print; the
+  // sample-rate entry appears in BOTH during that window (harmless duplication),
+  // then the standalone banner is retired in a follow-up once parity is confirmed.
+  const aaEl = document.getElementById('analysis-assumptions-banner');
+  if (aaEl) {
+    const list = Array.isArray(d.analysisAssumptions) ? d.analysisAssumptions : [];
+    if (list.length) {
+      const rows = list.map(a =>
+        '<li class="aa-item">'
+        + '<span class="aa-field">' + escapeHtmlAA(labelForAssumption(a.field)) + ':</span> '
+        + '<span class="aa-assumed">' + escapeHtmlAA(String(a.assumed)) + '</span> '
+        + '<span class="aa-source">(' + escapeHtmlAA(a.source) + ')</span>'
+        + (a.hint ? '<div class="aa-hint">' + escapeHtmlAA(a.hint) + '</div>' : '')
+        + '</li>'
+      ).join('');
+      aaEl.innerHTML =
+        '<div class="aa-head">⚠ This analysis is based on assumed inputs</div>'
+        + '<div class="aa-intro">The following values were not provided in the file or entered by you, '
+        + 'so the system assumed them to complete the analysis. If any are wrong, correct them in '
+        + 'Step 2 and re-run — results that depend on them are provisional until then.</div>'
+        + '<ul class="aa-list">' + rows + '</ul>';
+      aaEl.style.display = 'block';
+    } else {
+      aaEl.style.display = 'none';
+      aaEl.innerHTML = '';
     }
   }
 
@@ -2817,6 +2916,15 @@ async function streamClaude(){
   if(d.faults[0]&&d.faults[0].pct<40)flags.push('LOW_CONFIDENCE: Top fault '+d.faults[0].pct+'%  -  use indicative language only.');
   const zA=getZonesForClass(selClassId)[0];
   if(parseFloat(d.rms)<zA.rms_upper_mm_s)flags.push('ZONE_A: Machine in Zone A. Routine monitoring only  -  do not over-diagnose.');
+  // A12 (generalised): surface every assumed input as a data-quality flag so the
+  // report qualifies its language and never presents an assumed value as measured.
+  if(Array.isArray(d.analysisAssumptions)){
+    d.analysisAssumptions.forEach(a=>{
+      flags.push('ASSUMED_INPUT ['+a.field+']: '+a.assumed+' — '+a.source+
+        '. This value was NOT measured or user-confirmed; any result that depends on it is provisional. '+
+        'State this limitation explicitly and do not present dependent figures as verified.');
+    });
+  }
   const fd=d.faults.slice(0,CONFIG.fault_display_limit).map(f=>'- '+f.name+': '+faultIndicatorLabel(f.pct)+' (score '+f.pct+') | freq: '+(f.freq_hz?f.freq_hz.toFixed(1)+' Hz':'N/A')+' | harmonics: '+(f.harmonics_used||0)+' | '+f.iso_reference).join('\n');
 
   // ── RAG — build semantic query from NVR context, retrieve KB chunks ────────

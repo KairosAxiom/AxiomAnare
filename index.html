@@ -185,6 +185,19 @@ main{padding-top:160px;position:relative;z-index:1;}
    (not .data-banner-*) so it is unaffected by the print stylesheet's blanket
    ".data-banner{display:none}" rule — this flag must survive to printed/exported reports. */
 .sample-rate-banner{display:none;margin-bottom:12px;padding:10px 16px;border-radius:8px;font-family:'IBM Plex Sans',sans-serif;font-size:12px;line-height:1.5;gap:10px;align-items:flex-start;background:rgba(179,106,0,0.09);border:1px solid rgba(179,106,0,0.35);color:var(--orange);font-weight:500;}
+/* A12 (generalised): consolidated Analysis Assumptions note. SEPARATE class from
+   .data-banner (same reasoning as .sample-rate-banner above) so the blanket print
+   rule ".data-banner{display:none}" never hides it — assumed-input disclosure must
+   survive to printed/exported reports the engineer signs off on. */
+.assumption-note{display:none;margin-bottom:12px;padding:12px 14px;border-radius:8px;border:1px solid var(--orange);border-left:4px solid var(--orange);background:rgba(179,106,0,0.07);font-family:'IBM Plex Sans',sans-serif;}
+.assumption-note .aa-head{font-family:'Barlow Condensed',sans-serif;font-weight:600;font-size:15px;letter-spacing:0.02em;color:var(--orange);margin-bottom:4px;}
+.assumption-note .aa-intro{font-size:12.5px;color:var(--text);margin-bottom:8px;line-height:1.5;}
+.assumption-note .aa-list{margin:0;padding-left:18px;}
+.assumption-note .aa-item{font-size:12.5px;color:var(--text);margin-bottom:6px;line-height:1.45;}
+.assumption-note .aa-field{font-family:'Barlow Condensed',sans-serif;font-weight:600;color:var(--text);}
+.assumption-note .aa-assumed{font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--orange);}
+.assumption-note .aa-source{color:var(--muted);font-size:11.5px;}
+.assumption-note .aa-hint{font-size:11.5px;color:var(--muted);margin-top:2px;font-style:italic;}
 .param-input.input-required{border-color:var(--orange) !important;box-shadow:0 0 0 2px rgba(179,106,0,0.15);}
 /* Locked fault rows */
 .fault-locked{opacity:0.5;}
@@ -398,6 +411,15 @@ main{padding-top:160px;position:relative;z-index:1;}
 
   /* ── FIX 5: Hide data banner (blue info strip) in print ── */
   .data-banner { display: none !important; }
+
+  /* A12 (generalised): assumed-input note MUST print — it is the disclosure the
+     signing engineer relies on. Force-show ONLY when it has content: :not(:empty)
+     avoids printing an empty orange box on clean (no-assumption) reports, where
+     the JS sets innerHTML='' and display:none. */
+  .assumption-note:not(:empty) { display: block !important; background: #fffbf0 !important; border-color: #f39c12 !important; break-inside: avoid; }
+  .assumption-note .aa-head, .assumption-note .aa-assumed { color: #b36a00 !important; }
+  .assumption-note .aa-intro, .assumption-note .aa-item, .assumption-note .aa-field { color: #333 !important; }
+  .assumption-note .aa-source, .assumption-note .aa-hint { color: #666 !important; }
 
   /* ── Charts ── */
   canvas { max-width: 100% !important; }
@@ -749,6 +771,7 @@ main{padding-top:160px;position:relative;z-index:1;}
   <div class="ew-banner" id="ew-banner"><div style="font-size:18px;flex-shrink:0;">&#9889;</div><div><div class="ew-title">Early Warning — Pre-Zone Breach Alert</div><div class="ew-desc" id="ew-desc">—</div><div style="margin-top:4px;" id="ew-clause"></div></div></div>
   <div class="data-banner" id="data-type-banner">&#128268; —</div>
   <div class="sample-rate-banner" id="sample-rate-banner"></div>
+  <div class="assumption-note" id="analysis-assumptions-banner"></div>
 
   <!-- MANAGEMENT SUMMARY CARD -->
   <div id="mgmt-card" class="mgmt-card green" style="display:none;">

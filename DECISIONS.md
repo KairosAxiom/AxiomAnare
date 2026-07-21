@@ -12,8 +12,12 @@ Every clause reference is a stored CONFIG constant (per fault rule, zone, trend)
 carries an explicit ANTI-HALLUCINATION block: use ONLY values from the machine's record, cite ONLY ISO
 clauses already in that record. The AI quotes constants, it does not freelance citations.
 **So the risk is a wrong constant, not runtime hallucination — fixable in one place.**
-⚠️ OPEN: verify the stored references against the real standards. The `§x.x` style looks conventional;
-the `Table 1 S5.1` / `IEC 60034-14:2003 S5.2` style does NOT match ISO/IEC numbering — check `KB/Standards`.
+⚠️ OPEN (updated 21 Jul 2026): **ISO 10816-3 verified against the published 2009(E) standard and
+CORRECTED** — the fabricated `Table 1 S5.x` clauses and the wrong zone boundary VALUES (4/5 classes) were
+fixed in CONFIG (see Part B, "ISO ringfence integrity audit"). Still to verify: ISO 13379-1, 13373-1,
+13373-2, 13381-1, 55001 and IEC 60034-14 — all still carry the suspect `Sx.x` notation and have NOT been
+checked against their real clause structure. Same option-(a) method when done (cite only to the verifiable
+level — annex/clause — never an invented decimal).
 
 ### A2. Confidence drives language (enforced in prompt)
 Below ~40% confidence → indicative language only. Display floor `minimum_fault_confidence_pct: 8`;
@@ -211,6 +215,67 @@ zero user benefit:
 **The point:** brand-facing surfaces became LynxEye; private plumbing kept the AxiomAnare name so the repo,
 folders, and ref all still agree with each other. The naming mismatch (product ≠ repo/folders) is
 intentional and documented — see CONTEXT.md → Repository section for the one-line map.
+
+### Why input assumptions are now surfaced, not silently defaulted (21 Jul 2026)
+A12's "no silent defaults" principle was generalised beyond sample rate to every value the engine assumes
+when the user doesn't supply it. The parser (`agnosticParser2.js`) now publishes a `window.AG.assumptions`
+contract; `app.js` merges it with its own sample-rate provenance into a single consolidated "Analysis
+Assumptions" note that appears (a) on screen, (b) on printed/exported reports, and (c) as DATA QUALITY
+FLAGS in the AI prompt — so the report itself qualifies its language and the user can correct any wrong
+assumption in Step 2 and re-run. Four assumption types are surfaced: guessed unit, approximate conversion,
+vendor-default sample rate, preset sample rate. Confident inputs (name-matched unit, file-detected or
+hand-keyed sample rate) produce no note.
+- **Decision — unit guesses run-with-note, not quarantine.** Unlike a missing sample rate (which A12
+  quarantines), an inferred unit always has a defensible best guess; blocking every unlabelled-unit file
+  would gut the agnostic value proposition. The note is the safety mechanism; silent substitution remains
+  forbidden. A surfaced, correctable assumption is the bounded relaxation.
+- **Bug fixed en route — U_PAT word-boundary.** Unit-name detection used `\b` boundaries, but underscore is
+  a regex word character, so the commonest real column names (`velocity_mm_s`, `accel_g`, `vibration_mmps`)
+  NEVER matched and fell through to the amplitude-range GUESS — mislabelling units on most underscore-named
+  files and, when wrong, corrupting the ISO velocity zone. Fixed with the same letter-only lookaround
+  already applied to FS_PAT/TIME_PAT. Effect: the assumptions note now fires far LESS often (correct matches
+  instead of guesses). Verified against a match + non-false-positive suite (`g` still rejects
+  gap/gear/avg/range).
+
+### ISO ringfence integrity audit — mechanism sound, constants wrong (21 Jul 2026)
+Audited the anti-hallucination ringfence (A1) end-to-end. **The mechanism is intact**: the Cloudflare Worker
+is a pure pass-through (never touches prompt or response), CONFIG-as-data holds, the anti-hallucination
+prompt block is enforced, and RAG/KB context is fenced separately from ISO citations. So the model is not
+free-hallucinating — it faithfully cites the stored constants. **The risk is therefore a wrong constant,
+exactly as A1 predicted — and several were found.**
+
+**ISO 10816-3 zone table — CORRECTED (verified against ISO 10816-3:2009(E)).** Two classes of defect, both
+fixed in `app.js` CONFIG `iso_severity_zones`:
+1. *Fabricated citations.* `ISO 10816-3:2009 Table 1 S5.1..S5.4` does not exist in the standard. Real
+   structure: **Table A.1** (Group 1, large >300 kW) and **Table A.2** (Group 2, medium 15–300 kW), each
+   split Rigid/Flexible; zones A/B/C/D are table ROWS, not `Sx.x` sub-clauses. Corrected to
+   "Table A.1/A.2 (Group N, Rigid/Flexible), Zone X" — cited only to the verifiable level (option (a): no
+   invented decimals).
+2. *Wrong boundary VALUES on 4 of 5 classes* — the more serious finding, because a wrong boundary
+   mis-classifies a machine's zone (a real diagnostic error, not just an uncheckable citation). Corrected to
+   the published Table A.1/A.2 velocity values (mm/s r.m.s., A/B · B/C · C/D):
+     - Group 1 Rigid 2.3·4.5·7.1   ·   Group 1 Flexible 3.5·7.1·11.0
+     - Group 2 Rigid 1.4·2.8·4.5   ·   Group 2 Flexible 2.3·4.5·7.1
+   Class→Group mapping: cls_ii→G2 Rigid, cls_ii_f→G2 Flex, cls_iii→G1 Rigid, cls_iv→G1 Flex. The corrected
+   boundaries are **stricter** than the old ones — some existing readings will shift up a zone. This is a
+   correction, not a regression, but it changes diagnostic output → **CWRU re-run required (A6).**
+
+**cls_i ("Class I", ≤15 kW) — kept, but flagged honestly.** ≤15 kW is outside ISO 10816-3's scope entirely;
+its 0.71/1.8/4.5 bands are **ISO 2372:1974 Class I** (withdrawn 1995). Values kept per decision this session,
+but the citation was corrected from a false "ISO 10816-3" to "ISO 2372:1974 Class I (legacy — outside ISO
+10816-3 scope)", and the class label to "Class I (legacy)", so the ringfence no longer misattributes the
+source. Revisit whether to migrate small machines onto a proper ISO 20816 basis later.
+
+**Verified via zone-lookup test:** the corrected table reproduces the standard's own worked examples (e.g.
+Group 2 rigid pump @ 5.0 mm/s → Zone D). All checks pass. NOTE: zone *logic* verified in isolation; the
+CWRU benchmark (A6) is the required gate before this reaches `main`, since the value changes alter scoring.
+
+**Still open (see A1):** ISO 13379-1, 13373-1/2, 13381-1, 55001, IEC 60034-14 all still carry the suspect
+`Sx.x` notation and were NOT corrected this session — deferred to a follow-up pass, same option-(a) method.
+
+**Recommended companion (not yet done):** add one explicit line to the AI prompt KB block — "these excerpts
+are background only; never cite them as ISO/IEC clauses" — to harden the Layer-1/Layer-2 boundary from
+implicit (currently only Rule 4) to explicit.
 
 ### [ADD future decisions here — date, what, why]
 

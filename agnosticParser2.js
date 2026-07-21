@@ -28,6 +28,17 @@ window.AG = {
   rpm:         null,
   vendorKey:   null,
 
+  // Assumption channel (contract consumed by app.js runPipeline).
+  // Each entry: { field, assumed, source, corrigible, hint }
+  //   field     — short machine key ('unit' | 'sample_rate' | 'unit_conversion')
+  //   assumed   — the value the parser fell back to (human-readable)
+  //   source    — WHY it was assumed (e.g. 'inferred from signal amplitude range')
+  //   corrigible— true if the user can override it in Step 2 and re-run
+  //   hint      — plain-language correction instruction shown to the user
+  // Empty array = "parser surfaced no assumptions", NEVER interpreted as "safe":
+  // app.js still owns its own sample-rate provenance (A12) and merges the two.
+  assumptions: [],
+
   getSignal(colIndex) {
     const ch = this.parseResult?.channels?.find(c => c.index === colIndex);
     return ch?.converted?.length ? ch.converted : null;
@@ -39,6 +50,7 @@ window.AG = {
     this.fs          = null;
     this.rpm         = null;
     this.vendorKey   = null;
+    this.assumptions = [];
   },
 
   // Build a synthetic velocity CSV from the primary converted channel.
@@ -288,14 +300,23 @@ const VENDOR_PROFILES = {
 // DETECTION PATTERNS
 // ─────────────────────────────────────────────────────────────────
 
+// Bugfix (same class as the FS_PAT/TIME_PAT fix below): the original used \b
+// boundaries, but \b treats underscore as a word character — so the most common
+// real-world unit-in-name conventions "velocity_mm_s", "accel_g", "vibration_mmps"
+// NEVER matched, silently falling through to the amplitude-range unit GUESS
+// (inferUnitRange). That mislabels units on the majority of underscore-named files
+// and, when it guesses wrong, corrupts every ISO velocity zone. Fixed with the same
+// letter-only lookaround used for FS_PAT/TIME_PAT so underscores/digits delimit,
+// while "g" still correctly rejects gap/gear/avg/range and "accel_DE_X" still maps
+// to g. Verified against a match + non-false-positive suite before applying.
 const U_PAT = {
-  mmps: /\b(mm\s*\/\s*s|mm\/sec|velocity|vel\b)\b/i,
-  inps: /\b(in\s*\/\s*s|in\/sec|ips\b)\b/i,
-  cmps: /\b(cm\s*\/\s*s|cm\/sec)\b/i,
-  g:    /\b(g[s]?\b|grav|accel(eration)?)\b(?!\s*\/\s*s)/i,
-  mps2: /\b(m\s*\/\s*s[²2]|ms-2)\b/i,
-  mum:  /\b(µm|um|micron|displacement)\b/i,
-  db:   /\b(d[bB]|decibel)\b/i,
+  mmps: /(?<![a-zA-Z])(mm\s*\/\s*s|mm\/sec|mmps|velocity|vel)(?![a-zA-Z])/i,
+  inps: /(?<![a-zA-Z])(in\s*\/\s*s|in\/sec|ips)(?![a-zA-Z])/i,
+  cmps: /(?<![a-zA-Z])(cm\s*\/\s*s|cm\/sec|cmps)(?![a-zA-Z])/i,
+  g:    /(?<![a-zA-Z])(g|gs|grav|accel(?:eration)?)(?![a-zA-Z])(?!\s*\/\s*s)/i,
+  mps2: /(?<![a-zA-Z])(m\s*\/\s*s[²2]|ms-2|mps2)(?![a-zA-Z])/i,
+  mum:  /(?<![a-zA-Z])(µm|um|micron|displacement)(?![a-zA-Z])/i,
+  db:   /(?<![a-zA-Z])(db|decibel)(?![a-zA-Z])/i,
 };
 
 // Bugfix (applies to all *_PAT constants below): \b requires a non-word character on
@@ -500,8 +521,15 @@ function extractMeta(metaKV, cols, rows, filename) {
   m.vendorKey=vendorToKey(m.vendor);
 
   for (const col of cols.filter(c=>c.type==='signal')) {
-    if (!col.unit&&blanket) col.unit=blanket;
-    if (!col.unit) col.unit=inferUnitRange(col.stats);
+    // unitSource records HOW the unit was resolved, so downstream assumption
+    // reporting can distinguish a confident match from a fallback guess:
+    //   'name'   — matched from the column name (U_PAT) in classifyCols  [confident]
+    //   'blanket'— matched from a file-level "units=" metadata line        [confident]
+    //   'range'  — GUESSED from signal amplitude range                     [ASSUMED]
+    //   'default'— no unit at all; buildResult will treat as mm/s          [ASSUMED]
+    if (col.unit) { col.unitSource = col.unitSource || 'name'; }
+    else if (blanket) { col.unit = blanket; col.unitSource = 'blanket'; }
+    else { col.unit = inferUnitRange(col.stats); col.unitSource = 'range'; }
   }
   return m;
 }
@@ -558,6 +586,7 @@ function buildResult(cols, rows, meta, filename) {
     const rawUnit=col.unit||'unknown';
     const conv=toMmps(col.values,rawUnit,meta.fs);
     return {index:col.index,name:col.name,rawUnit,unitLabel:uLabel(rawUnit),
+      unitSource:col.unitSource||(col.unit?'name':'default'),
       _rawValues:col.values,converted:conv.signal,conversionMethod:conv.method,
       conversionApprox:conv.approx,wasConverted:conv.method!=='identity',
       suggestedLocation:suggestLoc(col.name,i),suggestedAxis:suggestAxis(col.name,i),
@@ -641,6 +670,71 @@ function buildWarnings(r) {
     if (ch.conversionApprox) w.push({code:'CONV_APPROX',severity:'info',message:`Column "${ch.name}": conversion approximated (${ch.conversionMethod}). Enter Fs for accurate integration.`});
   });
   return w;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// ASSUMPTION CHANNEL  (contract consumed by app.js runPipeline)
+// Emits ONLY assumptions the parser is responsible for (unit, unit-conversion
+// approximation, and vendor-default sample rate). app.js owns its own
+// sample-rate provenance (A12) and merges these in — see AG.assumptions doc.
+// ─────────────────────────────────────────────────────────────────
+
+function buildAssumptions(r) {
+  const a = [];
+  if (!r) return a;
+
+  // (1) Unit assumed — a signal channel whose unit was GUESSED from amplitude
+  // range, or defaulted with no unit at all. A wrong unit guess silently
+  // corrupts every ISO velocity-zone and FFT-amplitude result, so this is the
+  // highest-value assumption to surface. Name-matched / blanket-matched /
+  // vendor-profile units are confident and NOT reported here.
+  const guessed = (r.channels||[]).filter(
+    ch => ch.unitSource === 'range' || ch.unitSource === 'default'
+  );
+  if (guessed.length) {
+    const names = guessed.map(ch => ch.name).join(', ');
+    const shown = guessed[0].unitLabel || 'mm/s';
+    a.push({
+      field: 'unit',
+      assumed: shown,
+      source: guessed.length === (r.channels||[]).length
+        ? 'inferred from signal amplitude range (no unit label in file)'
+        : `inferred from signal amplitude range for: ${names}`,
+      corrigible: true,
+      hint: 'If the sensor output is acceleration (g / m/s²) or in/s, set the correct unit in Step 2 and re-run — the ISO velocity zone depends on it.'
+    });
+  }
+
+  // (2) Unit-conversion approximated — conversion ran but is an approximation
+  // (e.g. g→mm/s without a real Fs, or an unknown-unit passthrough). Distinct
+  // from (1): the unit may be known but the CONVERSION is unverified.
+  const approx = (r.channels||[]).filter(
+    ch => ch.conversionApprox && ch.unitSource !== 'range' && ch.unitSource !== 'default'
+  );
+  if (approx.length) {
+    a.push({
+      field: 'unit_conversion',
+      assumed: approx[0].conversionMethod || 'approximate',
+      source: `conversion approximated for: ${approx.map(c=>c.name).join(', ')}`,
+      corrigible: true,
+      hint: 'Enter an accurate sampling rate in Step 2 so acceleration→velocity integration is exact rather than approximated, then re-run.'
+    });
+  }
+
+  // (3) Sample rate came from a VENDOR-PROFILE default (not the file, not the
+  // user). app.js labels file/timestamp/hand-keyed values itself; this covers
+  // the one origin only the parser knows about — an unverified vendor default.
+  if (r.fs && r.fsSource === 'vendor_profile_default') {
+    a.push({
+      field: 'sample_rate',
+      assumed: r.fs.toLocaleString() + ' Hz',
+      source: 'vendor-profile default (not found in the file, not entered)',
+      corrigible: true,
+      hint: 'Confirm the real acquisition rate from your collector/analyzer export settings and enter it in Step 2 — all fault frequencies scale with it.'
+    });
+  }
+
+  return a;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -829,6 +923,7 @@ window.onVendorHintChange = function(key) {
     const updated=applyProfile(JSON.parse(JSON.stringify(AG.parseResult)),key);
     updated.parseConfidence=scoreConf(updated); updated.warnings=buildWarnings(updated);
     AG.parseResult=updated; AG.vendorKey=key;
+    AG.assumptions=buildAssumptions(updated);
     renderParseCard(updated); syncWizard(updated);
   }
 };
@@ -844,6 +939,7 @@ function applyFsOverride(hz) {
     return ch;
   });
   AG.parseResult.parseConfidence=scoreConf(AG.parseResult); AG.parseResult.warnings=buildWarnings(AG.parseResult);
+  AG.assumptions=buildAssumptions(AG.parseResult);
   renderParseCard(AG.parseResult); syncWizard(AG.parseResult);
 }
 
@@ -898,6 +994,7 @@ async function runAG(file) {
 
     AG.parseResult=result; AG.confidence=result.parseConfidence;
     AG.fs=result.fs; AG.rpm=result.rpm; AG.vendorKey=result.vendorKey;
+    AG.assumptions=buildAssumptions(result);
     syncWizard(result);
     renderParseCard(result);
 
