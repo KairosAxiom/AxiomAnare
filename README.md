@@ -1,8 +1,12 @@
-# AxiomAnare — Vibration Diagnostic Engine
+# LynxEye — Vibration Diagnostic Engine
 
 Browser-based vibration analysis platform. ISO 10816 / ISO 13379 / ISO 13381 / ISO 13373 / ISO 55001 ringfenced.
 
-**Live app:** https://limykdavid-maker.github.io/axiomanare
+**Live app:** https://kairosaxiom.github.io/AxiomAnare
+
+> Note: the product is **LynxEye**; the GitHub repo and live-URL path remain `AxiomAnare` by design
+> (display-name-only rebrand — the repo was intentionally not renamed). See CONTEXT.md / DECISIONS.md
+> for the full naming map.
 
 ## What it does
 - Upload any vibration data file (CSV, TSV, XLSX, XLS, JSON, TXT)
