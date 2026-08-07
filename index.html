@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<!-- LynxEye v2.1 - ASCII clean build -->
+<!-- LynxEyes v2.1 - ASCII clean build -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>LynxEye — Vibration Diagnostic Engine</title>
-<link rel="icon" type="image/svg+xml" href="lynxeye-logo-static.svg">
+<title>LynxEyes — Vibration Diagnostic Engine</title>
+<link rel="icon" type="image/png" href="lynxeyes-favicon.png">
 <link href="https://fonts.googleapis.com/css2?family=Exo+2:wght@700;800&family=IBM+Plex+Mono:wght@300;400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Barlow+Condensed:wght@500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
@@ -281,9 +281,7 @@ main{padding-top:160px;position:relative;z-index:1;}
 @media(max-width:900px){
   nav{height:auto;min-height:64px;padding:10px 16px;flex-wrap:wrap;gap:8px;overflow:visible;}
   .logo{flex-shrink:0;}
-  #nav-logo{width:72px !important;height:55px !important;}
-  .logo-tag1,.logo-tag2{display:none;}
-  .logo span{font-size:1.6rem !important;}
+  .logo img{height:52px !important;}
   .nav-right{margin-left:auto;align-items:flex-end;gap:6px;}
   .nav-right>div:first-child{display:none !important;} /* hide free badge row on tablet */
   .nav-right>div:nth-child(2){flex-wrap:wrap;gap:6px;}
@@ -301,8 +299,7 @@ main{padding-top:160px;position:relative;z-index:1;}
 /* ── Mobile ── */
 @media(max-width:600px){
   nav{padding:8px 12px;gap:6px;}
-  #nav-logo{width:56px !important;height:43px !important;}
-  .logo span{font-size:1.35rem !important;}
+  .logo img{height:42px !important;}
   /* Stack nav: logo row on top, buttons below */
   nav{flex-direction:column;align-items:stretch;}
   .logo{justify-content:flex-start;}
@@ -332,7 +329,7 @@ main{padding-top:160px;position:relative;z-index:1;}
 @media print {
   /* ── Page setup ── */
   @page { size: A4 portrait; margin: 14mm 12mm 18mm 12mm; }
-  @page { @bottom-center { content: "LynxEye · AI-assisted diagnostic report · Not a certified engineering determination"; font-size: 7pt; color: #999; } }
+  @page { @bottom-center { content: "LynxEyes · AI-assisted diagnostic report · Not a certified engineering determination"; font-size: 7pt; color: #999; } }
 
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 
@@ -505,7 +502,7 @@ main{padding-top:160px;position:relative;z-index:1;}
 
   /* ── FIX 5: AI section footer disclaimer ── */
   #results-screen::after {
-    content: "LynxEye · AI-assisted diagnostic report · Not a certified engineering determination · " attr(data-filename);
+    content: "LynxEyes · AI-assisted diagnostic report · Not a certified engineering determination · " attr(data-filename);
     display: block; font-family: 'IBM Plex Mono', monospace;
     font-size: 7pt; color: #999; border-top: 1px solid #ddd;
     padding-top: 6px; margin-top: 20px;
@@ -515,30 +512,10 @@ main{padding-top:160px;position:relative;z-index:1;}
 </head>
 <body>
 <nav>
-  <div class="logo" style="display:flex;align-items:center;gap:14px;">
-    <svg id="nav-logo" viewBox="0 0 200 120" style="width:108px;height:83px;display:block;flex-shrink:0;" role="img" aria-label="LynxEye">
-      <style>
-        @media (prefers-reduced-motion: reduce){.nl-s{animation:none !important;}}
-        .nl-g1{transform-box:fill-box;transform-origin:center;animation:nlA 40s linear infinite;}
-        .nl-g2{transform-box:fill-box;transform-origin:center;animation:nlB 40s linear infinite;}
-        @keyframes nlA{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
-        @keyframes nlB{from{transform:rotate(22.5deg)}to{transform:rotate(-427.5deg)}}
-      </style>
-      <path d="M16,70 Q90,8 176,48" fill="none" stroke="#7bbde8" stroke-width="8" stroke-linecap="round"/>
-      <path d="M16,70 Q94,104 176,48" fill="none" stroke="#7bbde8" stroke-width="8" stroke-linecap="round"/>
-      <g transform="translate(94,50.5)">
-        <g class="nl-g1 nl-s"><path d="M9,0 L14.29,1.8 L13.95,3.58 L8.37,3.31 L7.28,5.29 L10.5,9.86 L9.18,11.1 L4.82,7.6 L2.78,8.56 L2.7,14.14 L0.9,14.37 L-0.57,8.98 L-2.78,8.56 L-6.13,13.03 L-7.72,12.16 L-5.74,6.93 L-7.28,5.29 L-12.62,6.94 L-13.39,5.3 L-8.72,2.24 L-9,0 L-14.29,-1.8 L-13.95,-3.58 L-8.37,-3.31 L-7.28,-5.29 L-10.5,-9.86 L-9.18,-11.1 L-4.82,-7.6 L-2.78,-8.56 L-2.7,-14.14 L-0.9,-14.37 L0.57,-8.98 L2.78,-8.56 L6.13,-13.03 L7.72,-12.16 L5.74,-6.93 L7.28,-5.29 L12.62,-6.94 L13.39,-5.3 L8.72,-2.24 Z" fill="#1f6fb2"/><circle r="5" fill="#faf8f3"/></g>
-        <g transform="translate(23.9,-2.8)"><g class="nl-g2 nl-s"><path d="M6.6,0 L11.85,1.88 L11.41,3.71 L5.88,3 L4.67,4.67 L7.05,9.71 L5.45,10.69 L2.04,6.28 L0,6.6 L-1.88,11.85 L-3.71,11.41 L-3,5.88 L-4.67,4.67 L-9.71,7.05 L-10.69,5.45 L-6.28,2.04 L-6.6,0 L-11.85,-1.88 L-11.41,-3.71 L-5.88,-3 L-4.67,-4.67 L-7.05,-9.71 L-5.45,-10.69 L-2.04,-6.28 L0,-6.6 L1.88,-11.85 L3.71,-11.41 L3,-5.88 L4.67,-4.67 L9.71,-7.05 L10.69,-5.45 L6.28,-2.04 Z" fill="#1f6fb2"/><circle r="4.5" fill="#faf8f3"/></g></g>
-      </g>
-    </svg>
-    <div style="display:flex;flex-direction:column;gap:3px;min-width:0;">
-      <div style="display:flex;align-items:baseline;gap:0;line-height:1;">
-        <span style="font-family:'Barlow Condensed',sans-serif;font-size:2.1rem;font-weight:800;letter-spacing:-.5px;color:#7bbde8;">Lynx</span><span style="font-family:'Barlow Condensed',sans-serif;font-size:2.1rem;font-weight:800;letter-spacing:-.5px;color:#1f6fb2;">Eye</span>
-      </div>
-      <div class="logo-tag1" style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#3a6a9a;letter-spacing:1.4px;white-space:nowrap;">AGNOSTIC · AUGMENTED DATA ANALYSING</div>
-      <div class="logo-tag2" style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#5a8ab0;white-space:nowrap;">Condition monitoring for rotary motors &amp; pumps</div>
-    </div>
-  </div>
+  <a href="index.html" class="logo" style="display:flex;align-items:center;text-decoration:none;flex-shrink:0;" aria-label="LynxEyes home">
+    <img src="lynxeyes-logo.png" alt="LynxEyes - Condition monitoring for rotary motors and pumps"
+         style="height:64px;width:auto;max-width:100%;display:block;" />
+  </a>
   <div class="nav-right">
     <div id="ax-free-badge" style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);padding:4px 10px;border:1px solid rgba(21,128,61,0.3);border-radius:6px;background:rgba(21,128,61,0.07);display:none;cursor:pointer;" onclick="Freemium.showUpgradeModal('feature')"></div>
     <div style="display:flex;align-items:center;gap:8px;">
@@ -950,13 +927,13 @@ main{padding-top:160px;position:relative;z-index:1;}
   <!-- ROW 3: AI Recommendations -->
   <div class="card fade-in" style="animation-delay:0.3s;">
     <div class="card-header">
-      <div class="card-title">AI Diagnostic Recommendations — LynxEye Assist</div>
+      <div class="card-title">AI Diagnostic Recommendations — LynxEyes Assist</div>
       <div style="display:flex;gap:5px;"><span class="clause">ISO 13379-1</span><span class="clause">ISO 13381-1</span><span class="badge b-purple">Claude AI</span></div>
     </div>
     <div class="stream-thinking" id="stream-thinking"><div class="spinner"></div><span>Claude is analysing your data against ISO standards…</span></div>
     <div class="reco-text typing" id="reco-text"></div>
     <div class="disclaimer-box" id="disclaimer-box"></div>
-    <div class="disclaimer-last" id="print-disclaimer" style="display:none;">LynxEye &middot; AI-assisted diagnostic report &middot; Not a certified engineering determination</div>
+    <div class="disclaimer-last" id="print-disclaimer" style="display:none;">LynxEyes &middot; AI-assisted diagnostic report &middot; Not a certified engineering determination</div>
   </div>
   </div><!-- /#single-channel-results -->
 </div>

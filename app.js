@@ -67,7 +67,7 @@ const Freemium = {
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(4px);';
     overlay.innerHTML = `
       <div style="background:#161b22;border:1px solid #4d9de0;border-radius:16px;padding:36px 32px;max-width:460px;width:100%;position:relative;text-align:center;">
-        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;color:#4d9de0;margin-bottom:12px;">LYNXEYE</div>
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:13px;font-weight:700;letter-spacing:2px;color:#4d9de0;margin-bottom:12px;">LYNXEYES</div>
         <div style="font-family:'Exo 2',sans-serif;font-weight:800;font-size:26px;color:#e8edf5;margin-bottom:10px;line-height:1.1;">
           ${reason === 'limit' ? 'Free trial complete' : 'Unlock Full Access'}
         </div>
@@ -335,7 +335,7 @@ const CONFIG = {
 };
 
 
-// LynxEye  -  Diagnostic Engine
+// LynxEyes  -  Diagnostic Engine
 // All logic runs after DOM is fully loaded
 document.addEventListener('DOMContentLoaded', function () {
 // Set measurement date default to today
@@ -1175,7 +1175,12 @@ async function runPipeline(raw, filename) {
   fftR._rawSignal = vals;   // detrended signal for envelope demodulation — ISO 13373-2:2016 §7.5
   // Shaft frequency: wizard RPM input takes priority over detectShaft()
   if (machineParams.shaftHz > 0) fftR._shaftHz = machineParams.shaftHz;
-  const shaftHz = machineParams.shaftHz > 0 ? machineParams.shaftHz : detectShaft(fftR);
+  const shaftFromUser = machineParams.shaftHz > 0;
+  const shaftHz = shaftFromUser ? machineParams.shaftHz : detectShaft(fftR);
+  // A12: an AUTO-DETECTED shaft rate is an assumed input. Assess its confidence so a weak/
+  // uncertain detection (1× buried under bearing tones — the CWRU-fault case) is surfaced,
+  // not silently asserted as fact. User/nameplate RPM is trusted and carries no flag.
+  const shaftConf = shaftFromUser ? null : detectShaftConfidence(fftR, shaftHz);
   const allFaults = classifyFaults(fftR, cf, kurt, dataTypes, machineParams);
   // Always include ALL unlocked faults (needed for health index + badge + fallback report)
   // Locked faults (MCSA/power) appended after — greyed in UI, excluded from analysis
@@ -1247,6 +1252,20 @@ async function runPipeline(raw, filename) {
       if (pa && pa.field && pa.assumed) analysisAssumptions.push(pa);
     }
   } catch (e) { /* parser channel optional — never block analysis on its absence */ }
+
+  // A12: auto-detected shaft rate (RPM not entered). Surface it as an assumed input unless
+  // detection is high-confidence (1× dominant, methods agree). medium/low confidence means the
+  // estimated RPM drives fault-frequency citations that are unverified — exactly the CWRU-fault
+  // case where the 1× is weak under bearing tones. User-entered RPM is trusted, no flag.
+  if (shaftConf && shaftConf.confidence !== 'high') {
+    analysisAssumptions.push({
+      field: 'rpm',
+      assumed: Math.round(shaftHz * 60) + ' RPM (' + shaftHz.toFixed(1) + ' Hz)',
+      source: 'auto-detected from spectrum — ' + (shaftConf.note || 'confidence ' + shaftConf.confidence),
+      corrigible: true,
+      hint: 'Enter the machine nameplate RPM in Step 2 and re-run — bearing fault frequencies (BPFO/BPFI/BSF/FTF) are computed from shaft speed and are unverified while it is estimated.'
+    });
+  }
 
   nvr = { filename, rms: rms.toFixed(3), peak: peak.toFixed(3), cf: cf.toFixed(2),
     dataTypes, dataBanner,
@@ -1528,21 +1547,59 @@ function computeFFT(signal, fs) {
   return {freqs,mags,fs,N,sRms};
 }
 
-// == SHAFT DETECTION  -  harmonic comb search ==
+// == SHAFT DETECTION ==
+// The shaft 1× (running speed) is physically the LOWEST genuine periodic line in the
+// spectrum; bearing-defect tones (BPFO/BPFI/BSF) and structural resonances sit ABOVE it
+// and are non-synchronous. The prior harmonic-comb summed magnitudes, so on a FAULTED
+// machine — where a bearing tone can tower ~7× over a weak 1× — it locked onto the bearing
+// tone as if it were the shaft (verified failure: CWRU Ball→70.6Hz, IR→162.5Hz, OR→108Hz,
+// all should be ~30Hz/1797rpm). This mis-shaft then misaligned every fault-frequency bin,
+// the 118_Ball CWRU miss. Replaced with "lowest significant peak": the lowest local-max
+// above 5% of the in-band peak. Verified 5/5 on CWRU drive-end fixtures (normal + ball + IR
+// + OR007 + OR021). detectShaft() still returns a bare number (backward-compatible with the
+// classifyFaults() caller); detectShaftConfidence() reports how trustworthy that number is,
+// feeding the A12 assumed-input flag when the 1× is weak vs bearing tones.
 function detectShaft(fft) {
-  const {freqs,mags,sRms} = fft;
+  const {freqs,mags} = fft;
+  const fMin=CONFIG.shaft_freq_search_min_hz, fMax=CONFIG.shaft_freq_search_max_hz;
+  let bandMax=0;
+  for(let i=0;i<freqs.length;i++){if(freqs[i]>=fMin&&freqs[i]<=fMax&&mags[i]>bandMax)bandMax=mags[i];}
+  if(bandMax<=0) return (fMin+fMax)/2;
+  const threshold = bandMax * 0.05;
+  let lowestF=null;
+  for(let i=1;i<freqs.length-1;i++){
+    const f=freqs[i];
+    if(f<fMin||f>fMax) continue;
+    if(mags[i]>mags[i-1] && mags[i]>mags[i+1] && mags[i]>threshold){ lowestF=f; break; }
+  }
+  return lowestF!=null ? lowestF : (fMin+fMax)/2;
+}
+
+// Reports confidence in an AUTO-DETECTED shaft rate by cross-checking the lowest-significant-peak
+// pick against the legacy harmonic-comb pick. Agreement + a dominant 1× → high; disagreement means
+// the 1× is weak relative to bearing/resonance tones (comb chased one), so the detected rate, while
+// physically the correct 1×, is uncertain and must be flagged for RPM verification (A12).
+// Returns { confidence:'high'|'medium'|'low', note:string, comb:number, ratio:number }.
+function detectShaftConfidence(fft, shaftHz) {
+  const {freqs,mags} = fft;
   const fMin=CONFIG.shaft_freq_search_min_hz, fMax=CONFIG.shaft_freq_search_max_hz, n=CONFIG.harmonic_comb_count, bw=0.08;
   function peak(fc){const lo=fc*(1-bw),hi=fc*(1+bw);let mx=0;for(let i=0;i<freqs.length;i++){if(freqs[i]>hi)break;if(freqs[i]>=lo&&mags[i]>mx)mx=mags[i];}return mx;}
-  // Find global max in search range to set adaptive threshold
-  let rangeMax=0;
-  for(let i=0;i<freqs.length;i++){if(freqs[i]>=fMin&&freqs[i]<=fMax&&mags[i]>rangeMax)rangeMax=mags[i];}
-  const threshold = rangeMax * 0.05; // 5% of range peak — much more sensitive
+  let bandMax=0;
+  for(let i=0;i<freqs.length;i++){if(freqs[i]>=fMin&&freqs[i]<=fMax&&mags[i]>bandMax)bandMax=mags[i];}
+  // legacy comb pick, for cross-check only
   const cands=[];
-  for(let i=1;i<freqs.length-1;i++){const f=freqs[i];if(f<fMin||f>fMax)continue;if(mags[i]>mags[i-1]&&mags[i]>mags[i+1]&&mags[i]>threshold)cands.push(f);}
-  if(!cands.length)return (fMin+fMax)/2;
-  let best=cands[0],bestS=-1;
-  for(const fc of cands){if(fc*n>fft.fs/2)continue;let s=0;for(let h=1;h<=n;h++)s+=peak(fc*h);s*=(fc>fMax*0.5?0.85:1.0);if(s>bestS){bestS=s;best=fc;}}
-  return best;
+  for(let i=1;i<freqs.length-1;i++){const f=freqs[i];if(f<fMin||f>fMax)continue;if(mags[i]>mags[i-1]&&mags[i]>mags[i+1]&&mags[i]>bandMax*0.05)cands.push(f);}
+  let comb=shaftHz;
+  if(cands.length){let bs=-1;for(const fc of cands){if(fc*n>fft.fs/2)continue;let s=0;for(let h=1;h<=n;h++)s+=peak(fc*h);s*=(fc>fMax*0.5?0.85:1.0);if(s>bs){bs=s;comb=fc;}}}
+  const ratio = bandMax>0 ? peak(shaftHz)/bandMax : 0;
+  const agree = shaftHz>0 && Math.abs(comb-shaftHz)/shaftHz < 0.05;
+  if(agree && ratio>=0.5) return { confidence:'high', note:'', comb, ratio };
+  if(agree)              return { confidence:'medium', note:'shaft 1× present but not dominant — verify nameplate RPM', comb, ratio };
+  return {
+    confidence: ratio>=0.10 ? 'medium' : 'low',
+    note: 'shaft 1× weak vs bearing/resonance tones (harmonic search suggested ~'+Math.round(comb)+' Hz); estimated RPM is unverified — confirm the machine nameplate speed',
+    comb, ratio
+  };
 }
 
 // == DATA TYPE DETECTOR ==
@@ -2887,7 +2944,7 @@ function buildRagContext(chunks) {
   if (!chunks || chunks.length === 0) return '';
   const lines = [
     '=== KNOWLEDGE BASE CONTEXT ===',
-    'The following excerpts were retrieved from the LynxEye knowledge base via semantic search.',
+    'The following excerpts were retrieved from the LynxEyes knowledge base via semantic search.',
     'Use them to enrich your analysis where directly relevant. Do NOT fabricate beyond what is shown.',
     ''
   ];
@@ -2946,7 +3003,7 @@ async function streamClaude(){
   // ─────────────────────────────────────────────────────────────────────────
 
   const prompt=[
-    'You are LynxEye Assist  -  domain-ringfenced to vibration analysis, condition monitoring, rotating machinery, and maintenance engineering ONLY.',
+    'You are LynxEyes Assist  -  domain-ringfenced to vibration analysis, condition monitoring, rotating machinery, and maintenance engineering ONLY.',
     '','=== MACHINE ===',
     d.classRow.machine_type_desc+' | '+d.classRow.iso_standard_ref+' | '+d.classRow.mounting_type+' mount',
     '','=== NVR RECORD ===',
@@ -3062,7 +3119,7 @@ function applyFreemiumGates() {
       'user-select:none',
       'z-index:9000',
     ].join(';');
-    wm.textContent = 'LYNXEYE FREE TRIAL';
+    wm.textContent = 'LYNXEYES FREE TRIAL';
     rs.style.position = rs.style.position || 'relative';
     rs.appendChild(wm);
   }
@@ -3215,6 +3272,7 @@ function mdToHtml(md) {
   window.CONFIG              = CONFIG;
   window.computeFFT          = computeFFT;
   window.detectShaft         = detectShaft;
+  window.detectShaftConfidence = detectShaftConfidence;
   window.toCanonicalUnit     = toCanonicalUnit;
   window.classifyFaults      = classifyFaults;
   window.lookupZone          = lookupZone;
@@ -3260,7 +3318,7 @@ function mdToHtml(md) {
     hdr.innerHTML = `
       <div class="ph-logo"><svg viewBox="0 0 40 24" style="width:80%;height:80%;" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M3,13 Q18,2 37,10" fill="none" stroke="#4d9de0" stroke-width="2" stroke-linecap="round"/><path d="M3,13 Q19,21 37,10" fill="none" stroke="#4d9de0" stroke-width="2" stroke-linecap="round"/><g transform="translate(19,11)"><path d="M2.7,0 L4.29,0.54 L4.19,1.07 L2.51,0.99 L2.18,1.59 L3.15,2.96 L2.75,3.33 L1.45,2.28 L0.83,2.57 L0.81,4.24 L0.27,4.31 L-0.17,2.69 L-0.83,2.57 L-1.84,3.91 L-2.32,3.65 L-1.72,2.08 L-2.18,1.59 L-3.79,2.08 L-4.02,1.59 L-2.62,0.67 L-2.7,0 L-4.29,-0.54 L-4.19,-1.07 L-2.51,-0.99 L-2.18,-1.59 L-3.15,-2.96 L-2.75,-3.33 L-1.45,-2.28 L-0.83,-2.57 L-0.81,-4.24 L-0.27,-4.31 L0.17,-2.69 L0.83,-2.57 L1.84,-3.91 L2.32,-3.65 L1.72,-2.08 L2.18,-1.59 L3.79,-2.08 L4.02,-1.59 L2.62,-0.67 Z" fill="#4d9de0"/><circle r="1.5" fill="#1a2030"/></g><g transform="translate(25.4,8.6)"><path d="M2,0 L3.56,0.56 L3.42,1.11 L1.76,0.9 L1.4,1.4 L2.11,2.91 L1.63,3.21 L0.61,1.88 L0,2 L-0.56,3.56 L-1.11,3.42 L-0.9,1.76 L-1.4,1.4 L-2.91,2.11 L-3.21,1.63 L-1.88,0.61 L-2,0 L-3.56,-0.56 L-3.42,-1.11 L-1.76,-0.9 L-1.4,-1.4 L-2.11,-2.91 L-1.63,-3.21 L-0.61,-1.88 L0,-2 L0.56,-3.56 L1.11,-3.42 L0.9,-1.76 L1.4,-1.4 L2.91,-2.11 L3.21,-1.63 L1.88,-0.61 Z" fill="#4d9de0"/><circle r="1.3" fill="#1a2030"/></g></svg></div>
       <div class="ph-title">
-        <div class="ph-name">LynxEye</div>
+        <div class="ph-name">LynxEyes</div>
         <div class="ph-sub">Agnostic · Augmented AI Analysis</div>
       </div>
       <div class="ph-meta">
