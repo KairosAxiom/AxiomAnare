@@ -137,10 +137,12 @@ function mcGuessThresholdLabel(colName) {
 }
 
 
-function mcExtractColumn(raw, colName) {
-  const result = typeof Papa !== 'undefined'
-    ? Papa.parse(raw.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true })
-    : null;
+// PARSE-ONCE: accepts the pre-parsed PapaParse result (from mcParseOnce / MC.rawTable),
+// NOT the raw string. Previously this re-ran Papa.parse(raw.trim(), {dynamicTyping})
+// on the WHOLE file for every channel — on a large multi-channel file that meant
+// 1 (sample-rate) + N (per-channel) full synchronous parses on the main thread, which
+// wedged the tab at "Initialising…" for minutes with no error. See runMultiChannelPipeline.
+function mcExtractColumn(result, colName) {
   if (result?.data?.length > 5) {
     const values = result.data.map(r => r[colName]).filter(v => typeof v === 'number' && isFinite(v));
     // Detect unit from column name
@@ -479,18 +481,26 @@ window.mcUpdateMapping = function(i) {
 // exact value > auto-detected (header/timestamp) > user-selected Fmax preset > none.
 // Returns null (never a silent CONFIG.default_sample_rate_hz fallback) if nothing found —
 // caller must quarantine the run and ask the user for a value, exactly like runPipeline().
-function mcResolveSampleRate(raw) {
+// PARSE-ONCE helper: parse the raw file a SINGLE time for the whole multi-channel run
+// and cache on MC.rawTable. Every downstream consumer (sample-rate resolution + each
+// channel's column extraction) reuses this one parse instead of re-parsing raw. A large
+// multi-channel file used to be parsed 1 + N times synchronously on the main thread — the
+// cause of the "stuck at Initialising…" freeze. Returns the PapaParse result (or null).
+function mcParseOnce(raw) {
+  if (typeof Papa === 'undefined') return null;
+  return Papa.parse(raw.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true });
+}
+
+// PARSE-ONCE: accepts the pre-parsed result (from mcParseOnce), NOT the raw string.
+function mcResolveSampleRate(parsed) {
   const mp = window.machineParams || {};
   if (mp.declaredSampleRate && !mp.sampleRateIsPreset) {
     return { sr: mp.declaredSampleRate, srSource: 'declared', sampleRateAssumed: false };
   }
 
-  const result = typeof Papa !== 'undefined'
-    ? Papa.parse(raw.trim(), { header: true, dynamicTyping: true, skipEmptyLines: true })
-    : null;
-  if (result?.data?.length > 5) {
-    const headers = result.meta?.fields || Object.keys(result.data[0] || {});
-    const { sampleRate, sampleRateSource } = window.detectSampleRateFromRows(headers, result.data);
+  if (parsed?.data?.length > 5) {
+    const headers = parsed.meta?.fields || Object.keys(parsed.data[0] || {});
+    const { sampleRate, sampleRateSource } = window.detectSampleRateFromRows(headers, parsed.data);
     if (sampleRate) return { sr: sampleRate, srSource: sampleRateSource, sampleRateAssumed: false };
   }
 
@@ -514,10 +524,16 @@ async function runMultiChannelPipeline(raw, filename) {
     return;
   }
 
+  // PARSE-ONCE: parse the raw file a single time for the whole run and cache it.
+  // All sample-rate resolution and per-channel column extraction below reuse this one
+  // parse. Re-parsing raw per consumer previously froze the tab on large files.
+  const parsed = mcParseOnce(raw);
+  MC.rawTable = parsed;
+
   // == A12: no silent default — quarantine the whole run if no sample rate can be
   // resolved, same policy as the single-channel pipeline (was previously the exact
   // bug A12 fixed for single-channel: `declaredSampleRate || CONFIG.default_sample_rate_hz`).
-  const srResolved = mcResolveSampleRate(raw);
+  const srResolved = mcResolveSampleRate(parsed);
   if (!srResolved) {
     if (typeof doneStage === 'function') doneStage(1, 'QUARANTINED');
     if (typeof setNote === 'function') setNote('(!) Sample rate required — not found in file and not provided. Enter it in Step 2 (Sampling Rate field or Fmax preset) before running analysis.');
@@ -538,7 +554,7 @@ async function runMultiChannelPipeline(raw, filename) {
     if (ch.type === 'threshold') {
       const label = `[${ch.location} · ${ch.thresholdLabel || ch.col}]`;
       if (typeof setNote === 'function') setNote(`Channel ${i+1}/${activeChannels.length} — ${label}`);
-      const { values } = mcExtractColumn(raw, ch.col);
+      const { values } = mcExtractColumn(parsed, ch.col);
       if (values.length < 1) {
         MC.results.push({ col: ch.col, location: ch.location, type: 'threshold', label: ch.thresholdLabel || ch.col, error: 'No data' });
         continue;
@@ -563,7 +579,7 @@ async function runMultiChannelPipeline(raw, filename) {
     if (typeof setNote === 'function') setNote(`Channel ${i+1}/${activeChannels.length} — ${label}`);
 
     // Extract this column's values from raw
-    const { values, unit } = mcExtractColumn(raw, ch.col);
+    const { values, unit } = mcExtractColumn(parsed, ch.col);
     if (values.length < 10) {
       MC.results.push({ col: ch.col, location: ch.location, axis: ch.axis, type: 'vibration', error: 'Insufficient data' });
       continue;
