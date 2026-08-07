@@ -1,4 +1,4 @@
-# LynxEye — Post-Deploy Test Checklist
+# LynxEyes — Post-Deploy Test Checklist
 
 > Run EVERY time after `git push`, once GitHub Pages redeploys (~60s) and you've hard-refreshed (Ctrl+Shift+R).
 > This is your verification loop. Don't trust "it looks fine."

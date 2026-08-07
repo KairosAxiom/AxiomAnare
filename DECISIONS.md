@@ -1,4 +1,4 @@
-# LynxEye — DECISIONS & GUARDRAILS
+# LynxEyes — DECISIONS & GUARDRAILS
 
 > The *why* behind the project, and the rules that keep the analysis honest.
 > READ PART A every session before touching diagnostic or report logic.
@@ -122,7 +122,7 @@ frequency of interest (Fmax), not a constant. Common hardware rates are 12.8 / 2
 
 **Note on the planned DATA_QUALITY sample-rate ratios (ARCHITECTURE §5):** the
 `min_sample_rate_ratio_high: 20` / `medium: 10` values are ratios of sample rate to SHAFT frequency and
-are an LynxEye HOUSE HEURISTIC for capture quality — NOT the ISO 2.56×-Fmax rule and NOT prescribed
+are a LynxEyes HOUSE HEURISTIC for capture quality — NOT the ISO 2.56×-Fmax rule and NOT prescribed
 by any standard. They're reasonable (20× shaft speed captures a healthy harmonic range) but must be
 labelled as a house threshold wherever surfaced, never cited as if ISO prescribes them (per A1's spirit:
 house constants and standard-derived constants must not be conflated).
@@ -165,12 +165,12 @@ Published labelled ground truth; objective pass/fail independent of memory. 118_
 
 ### Why data-quality tiering and component-replacement reset were added (19 Jun 2026)
 An old (2020) third-party functional spec — unrelated vendor, unrelated system, dug up and reviewed for
-ideas rather than adopted wholesale — contained two patterns worth borrowing into LynxEye:
+ideas rather than adopted wholesale — contained two patterns worth borrowing into LynxEyes:
 1. Tiering measurements by objective acquisition quality (sample rate, duration, clipping) and excluding
    low-quality readings from trend/prognosis math while still showing them to the user (→ A10).
 2. Resetting trend/RUL history on confirmed component replacement, keeping old data for audit but
    excluding it from forward-looking calculations (→ A11).
-Both ideas were reviewed against LynxEye's actual schema and existing CONFIG-as-data convention
+Both ideas were reviewed against LynxEyes' actual schema and existing CONFIG-as-data convention
 before being logged. Most of the rest of that spec was rejected — see PART C.
 **Status: both logged as guardrails A10/A11, deliberately deferred to Phase 2. Not built.**
 
@@ -190,12 +190,12 @@ any figure is presented as standard-derived.
 ### Why the color scheme moved from dark navy to cream/light (6 Jul 2026)
 Cosmetic UI decision, not a data or pipeline change. Motivated by comparing an externally-built (other
 platform) mockup that used a light, minimal SaaS aesthetic — David liked that layout/color direction and
-asked for it to be adopted using LynxEye's own real design tokens, not the other tool's. Converted the
+asked for it to be adopted using LynxEyes' own real design tokens, not the other tool's. Converted the
 16 `:root` variables plus the hardcoded literal colors found duplicating them (see PART C entry below).
 Explicitly scoped as cosmetic only — no process, pipeline, or backend logic was touched.
 
-### Why the repo, local folders, and Supabase ref kept the AxiomAnare name after the LynxEye rebrand (20 Jul 2026)
-The product rebranded AxiomAnare → **LynxEye** (trademark + domain lynxeye.io cleared first). The rebrand
+### Why the repo, local folders, and Supabase ref kept the AxiomAnare name after the LynxEyes rebrand (20 Jul 2026)
+The product rebranded AxiomAnare → **LynxEyes** (trademark + domain lynxeye.io cleared first). The rebrand
 was scoped as **display-name-only**, following the earlier esimconnect → Juzgo precedent, which was also a
 display-name change (same repo, same Supabase project ref, only the human-readable label flipped).
 Deliberately NOT renamed, because each is invisible to users and renaming risks breaking live state for
@@ -209,10 +209,10 @@ zero user benefit:
   `AxiomAnare\axiomanare\AxiomAnare` is a harmless clone artifact — only a fresh re-clone would flatten it,
   which is a separate deliberate task, not bundled with a rename.
 - **Supabase project ref** `zjfhxutcvjxootoekade` is immutable — only the dashboard *display label* was
-  renamed to LynxEye. Anon key, URL, RLS, connection strings all key off the ref, not the label.
+  renamed to LynxEyes. Anon key, URL, RLS, connection strings all key off the ref, not the label.
 - **Cloudflare worker** `restless-tree-eac8` unchanged — worker names are invisible and `PROXY_BASE` +
   the Stripe webhook depend on it.
-**The point:** brand-facing surfaces became LynxEye; private plumbing kept the AxiomAnare name so the repo,
+**The point:** brand-facing surfaces became LynxEyes; private plumbing kept the AxiomAnare name so the repo,
 folders, and ref all still agree with each other. The naming mismatch (product ≠ repo/folders) is
 intentional and documented — see CONTEXT.md → Repository section for the one-line map.
 
@@ -277,6 +277,32 @@ CWRU benchmark (A6) is the required gate before this reaches `main`, since the v
 are background only; never cite them as ISO/IEC clauses" — to harden the Layer-1/Layer-2 boundary from
 implicit (currently only Rule 4) to explicit.
 
+### Why the product name is LynxEyes (plural), corrected 7 Aug 2026
+The intended product name is **LynxEyes** (plural). The earlier singular "LynxEye" used in the 20 Jul
+rebrand was an error, not a deliberate choice — corrected here so the singular doesn't resurface as
+confusion later (the way esimconnect did). Scope of the correction, following the SAME display-name-only
+discipline as the 20 Jul rebrand:
+- **Display name + UI text only.** index.html / app.js / fleet.html / admin.html prose, titles, print
+  headers/footers, the AI persona ("LynxEyes Assist"), RAG-prompt product name, watermark. Committed as
+  `fe16898`.
+- **Nav logo swapped** from the animated eye+gears SVG to a raster **lynx-head lockup** (head + "LynxEyes"
+  wordmark + "Predictive Condition Monitoring" tagline), Layout A — the full image replaces the old
+  SVG-mark + HTML-wordmark + two mono taglines. New files `lynxeyes-logo.png` (nav) and
+  `lynxeyes-favicon.png` (head crop); the old `lynxeye-logo-static.svg` favicon reference is retired
+  (file left in repo, now unreferenced).
+- **Tagline adopted** ("Predictive Condition Monitoring"), replacing the two prior mono taglines.
+- **Interim visual debt (accepted, logged):** the lockup is teal/green on a blue app, and the wordmark is
+  now baked pixels (softens slightly on retina, can't be restyled via CSS). This was a knowing trade-off
+  to ship the name correction now; swap in a true **blue vector** later — that's a clean one-file change.
+  The animated-SVG nav logo is retired (not kept elsewhere unless we deliberately re-add it).
+- **Domain:** `lynxeye.io` (singular) kept for now; `lynxeyes.io` (plural) being acquired. If/when the
+  plural domain is wired, the usual follow-ups apply (Supabase Auth redirect allow-list, Worker CORS,
+  Stripe success/cancel URLs).
+- **NOT touched** (same reasons as 20 Jul): GitHub repo + live URL (`kairosaxiom.github.io/AxiomAnare`),
+  local folders, Supabase ref `zjfhxutcvjxootoekade`, worker `restless-tree-eac8`, `ax_*` localStorage
+  keys, `axiomPrint()`, filenames `axiomanare_*`. The product≠repo naming mismatch is still intentional —
+  now product = **LynxEyes** (plural), repo/folders = AxiomAnare.
+
 ### [ADD future decisions here — date, what, why]
 
 ---
@@ -290,10 +316,10 @@ implicit (currently only Rule 4) to explicit.
 - Re-opening RLS to `USING (true)` to unblock something → never; fix the auth path (A8).
 - Destructive SQL with no backup on Free tier → export first (A9).
 - Drive/machine drift (D: office, E: home) → paths vary; don't hardcode one.
-- **Naming mismatch is INTENTIONAL, don't "fix" it:** product = LynxEye, but repo + local folders +
+- **Naming mismatch is INTENTIONAL, don't "fix" it:** product = LynxEyes, but repo + local folders +
   Supabase ref all still say/use AxiomAnare (kept unchanged in the 20 Jul rebrand — see Part B above).
-  Future sessions/self: if the folder or repo name "looks wrong" vs the LynxEye branding, it is NOT drift —
-  do not rename repo/folders/ref to match the product. Map: product = LynxEye · repo + folders = AxiomAnare
+  Future sessions/self: if the folder or repo name "looks wrong" vs the LynxEyes branding, it is NOT drift —
+  do not rename repo/folders/ref to match the product. Map: product = LynxEyes · repo + folders = AxiomAnare
   · Supabase ref = zjfhxutcvjxootoekade · worker = restless-tree-eac8. One project.
 - **Color variable governance drift (found 6 Jul 2026):** despite CSS variables existing for exactly
   this purpose, index.html accumulated 43 hardcoded hex literals and 71 hardcoded rgba() literals over
@@ -302,6 +328,13 @@ implicit (currently only Rule 4) to explicit.
   stylesheet). Values were reconciled during the 6 Jul theme conversion, but the literals still aren't
   wired to `var()` — a future edit to a variable won't propagate to them. Don't repeat the pattern:
   always reuse `var(--x)`, never hardcode a color that already has a named variable.
+- **Nav logo is now a raster PNG (interim), not a vector (found/decided 7 Aug 2026):** the
+  LynxEyes lynx-head lockup shipped as `lynxeyes-logo.png` because the only asset available was a
+  flattened PNG-in-SVG wrapper, not true vector paths. Consequences knowingly accepted: it's
+  teal/green on the blue app (off-palette vs the locked `#7bbde8`/`#1f6fb2` brand blues), the
+  wordmark softens slightly when scaled, and it can't be recolored via CSS. Replace with a real
+  blue vector SVG when one exists — do NOT treat the teal as the new brand palette. See Part B
+  ("Why the product name is LynxEyes").
 - **Stale saved Project Instructions draft:** a draft containing `esimconnect`, "2 analyses," and a
   10-item CSS variable list has been pasted into chat multiple times across sessions despite being
   corrected each time. It is not being edited between pastes — it's a static saved snippet. Delete it
@@ -319,10 +352,10 @@ implicit (currently only Rule 4) to explicit.
 Reviewed and consciously NOT adopted — logged so they don't get reinvented worse later if anyone
 references that document again:
 - **Single-tenant-per-client deployment** ("a new deployment is required when new clients are added").
-  Directly opposite to LynxEye's org-scoped multi-tenant RLS model (A8). Do not import this.
-- **Self-calibrating sensor hardware requirement** — not applicable; LynxEye doesn't own sensor
+  Directly opposite to LynxEyes' org-scoped multi-tenant RLS model (A8). Do not import this.
+- **Self-calibrating sensor hardware requirement** — not applicable; LynxEyes doesn't own sensor
   hardware, only processes uploaded files.
-- **Three-tier RBAC (Admin / Advanced / Common user)** — LynxEye's current model is binary
+- **Three-tier RBAC (Admin / Advanced / Common user)** — LynxEyes' current model is binary
   (`is_admin` or not). Noted as a *possible* future pattern if Fleet customers want sub-roles within
   their own org, but NOT to be built speculatively — consistent with the project's tight scope control.
 

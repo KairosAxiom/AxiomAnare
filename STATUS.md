@@ -1,18 +1,21 @@
-# LynxEye — STATUS
+# LynxEyes — STATUS
 
 > Session handover. Rewrite the short sections at the end of each session.
 > How it's built → ARCHITECTURE.md. Test after deploy → DEPLOY_CHECKLIST.md. Why → DECISIONS.md.
 
-**Last updated:** 2026-07-20   **By:** David
+**Last updated:** 2026-08-07   **By:** David
 
 ---
 
 ## Anchors
-- **Current HEAD:** `82ce298`
+- **Current HEAD:** `fe16898`
 - **Stable tag:** `v1.0-stable` → `4ef5762` (roll back: `git checkout v1.0-stable`)
 - **Live:** https://kairosaxiom.github.io/AxiomAnare
 
 ## Recently confirmed (this session)
+- Product name corrected to **LynxEyes** (plural) — the intended name; earlier singular
+  "LynxEye" was the error. Display-name + nav logo/favicon only (commit `fe16898`). Repo,
+  folders, Supabase ref, worker all still `AxiomAnare`/unchanged — see DECISIONS Part B.
 - RLS v2 migration is APPLIED — DB is org-scoped and locked down. SaaS schema is live.
 - Vib-derived electrical cap = 19 (intentional, below Indicative). Keep it.
 - Worker `restless-tree-eac8` is dashboard-managed; no local deploy command.

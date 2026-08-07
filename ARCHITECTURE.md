@@ -1,4 +1,4 @@
-# LynxEye — Architecture
+# LynxEyes — Architecture
 
 > Source of truth for how this project is built. Update when the project changes.
 > Companion files: STATUS.md (where we are), DEPLOY_CHECKLIST.md (after every push), DECISIONS.md (why + guardrails).

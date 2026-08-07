@@ -1,13 +1,14 @@
-# LynxEye — Living Project Context
-Last updated: 20 Jul 2026
-Latest code commit: 0df5503 (fleet gating) — index.html UI changes this
-session are NOT yet committed; see Session Log below.
+# LynxEyes — Living Project Context
+Last updated: 7 Aug 2026
+Latest code commit: fe16898 (LynxEyes rename + new nav logo/favicon, pushed).
+Earlier uncommitted 6 Jul index.html UI work (cream theme + KPI strip) is now
+superseded by / folded into the committed index.html; see Session Log below.
 Company: Kairos Ventures Pte Ltd
 
 ---
 
 ## What this product is
-LynxEye is an AI-augmented, ISO-ringfenced vibration diagnostic engine for
+LynxEyes is an AI-augmented, ISO-ringfenced vibration diagnostic engine for
 condition monitoring of rotary motors and pumps. Users upload vibration data
 files (CSV, MAT, XLSX, JSON, TSV, TXT), the app runs them through a 6-stage
 diagnostic pipeline, classifies machine condition per ISO 10816-3, scores
@@ -38,20 +39,21 @@ RLS-protected data in Supabase. Goal: a commercially launchable freemium SaaS
 - Stable tag: v1.0-stable — commit 4ef5762
 
 > **⚠️ Folder-vs-brand naming — READ IF THE PATHS LOOK WRONG.** The *product*
-> rebranded to **LynxEye** (20 Jul 2026), but the **GitHub repo, the local disk
+> rebranded to **LynxEyes** (name set 20 Jul 2026; singular→plural spelling corrected 7 Aug 2026),
+> but the **GitHub repo, the local disk
 > folders, and the Supabase project ref were all deliberately kept unchanged** —
-> so the names DON'T all say "LynxEye", and that is intentional, not drift:
->   - **Product / brand name:** LynxEye (what users, UI, reports, logo show)
+> so the names DON'T all say "LynxEyes", and that is intentional, not drift:
+>   - **Product / brand name:** LynxEyes (what users, UI, reports, logo show)
 >   - **GitHub repo:** still `AxiomAnare` → live URL `kairosaxiom.github.io/AxiomAnare`
 >     (repo was NOT renamed; GitHub redirect + "only display name changed" decision)
 >   - **Local folders:** still `AxiomAnare` — they match the *repo*, not the product.
 >     Path `…\Kairos\AxiomAnare\axiomanare\AxiomAnare` — the triple-nesting is a
 >     harmless clone artifact, not three different things.
 >   - **Supabase project ref:** still `zjfhxutcvjxootoekade` (immutable; only the
->     dashboard *display label* was renamed to LynxEye).
+>     dashboard *display label* was renamed to LynxEyes).
 >   - **Cloudflare worker:** still `restless-tree-eac8` (invisible; not renamed).
 >
-> **One-line map:** product = LynxEye · repo + folders = AxiomAnare · Supabase ref =
+> **One-line map:** product = LynxEyes · repo + folders = AxiomAnare · Supabase ref =
 > zjfhxutcvjxootoekade · worker = restless-tree-eac8. **All the same one project.**
 > See DECISIONS.md Part B ("Why the repo/folders/ref kept the AxiomAnare name").
 
@@ -141,7 +143,7 @@ variables.
 ---
 
 ## Supabase
-- Project: "Kairos Axiom" (FREE tier) / LynxEye / main (PRODUCTION)
+- Project: "Kairos Axiom" (FREE tier) / LynxEyes / main (PRODUCTION)
 - URL: https://zjfhxutcvjxootoekade.supabase.co
 - Anon key: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqZmh4dXRjdmp4b290b2VrYWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMjgzODAsImV4cCI6MjA5MDcwNDM4MH0.5yGgSjALJhTQm5Ud3W-fU2Bgo-3PkziaS0oLrGMYQ9o
   (note: fleet.html / index.html also reference a publishable key
@@ -324,8 +326,8 @@ keep-alive cron (verified), KB at 192 chunks embedded.
 - [ ] Emoji cleanup in UI (17 instances) — explicitly deferred by David
       until after current heavy-lift work; tracked here so it isn't lost
 - [ ] Color-literal-to-var() cleanup (see CSS variables governance gap above)
-- [ ] Commit the 6 Jul UI changes (cream theme + KPI strip) to the repo —
-      currently only exist as a local file David has, not yet pushed
+- [x] Commit the 6 Jul UI changes (cream theme + KPI strip) to the repo —
+      DONE (folded into the index.html committed as fe16898, 7 Aug)
 - [ ] Digital twin Phase 1, ML feature extraction, case library population,
       email notifications, annual pricing logic, PayPal integration,
       Supabase Storage buckets, NASA IMS 3rd_test, KB Q1/Q3/Q4 reports,
@@ -401,10 +403,10 @@ admin.html's actual state before assuming any status.
 Completed this session:
   - Cross-project mixup caught and resolved: a Cloudflare Pages link
     (axiomsensa-frontend.pages.dev) initially presented as "the last link
-    we used" for LynxEye turned out to belong to a genuinely separate
+    we used" for LynxEyes turned out to belong to a genuinely separate
     project, AxiomSensa. Confirmed by David: AxiomSensa and Juzgo (formerly
     eSimconnect) are two other, distinct projects with their own project
-    folders — not to be conflated with LynxEye again. This also explains
+    folders — not to be conflated with LynxEyes again. This also explains
     the historical "esimconnect" org name: it was this project's actual old
     repo home before the three projects were split into separate folders,
     not a random wrong guess.
@@ -472,9 +474,9 @@ Next session should:
     a pass replacing hardcoded color literals with proper var() references.
 ```
 
-## Session Log — 20 Jul 2026 (Rebrand — AxiomAnare → LynxEye)
+## Session Log — 20 Jul 2026 (Rebrand — AxiomAnare → LynxEyes)
 ```
-Product renamed AxiomAnare → LynxEye (display name only). Trademark + domain
+Product renamed AxiomAnare → LynxEyes (display name only). Trademark + domain
 (lynxeye.io) cleared by David before starting. Precedent: the earlier
 esimconnect → Juzgo rename, which was also a display-name change (same GitHub
 repo kept, same Supabase project ref, only the human-readable label flipped).
@@ -482,7 +484,7 @@ repo kept, same Supabase project ref, only the human-readable label flipped).
 Scope decision — DISPLAY NAME ONLY. Internal identifiers deliberately NOT
 touched (renaming them is user-invisible and breaks live state):
   - Supabase project ref zjfhxutcvjxootoekade (immutable) — only the dashboard
-    DISPLAY label should be renamed to LynxEye (do this in Supabase UI; not a
+    DISPLAY label should be renamed to LynxEyes (do this in Supabase UI; not a
     code change). Ref, anon key, all connection strings unchanged.
   - localStorage keys ax_tier / ax_pro / ax_analysis_count / ax_channels /
     ax_hz / ax_output_tokens / ax_tokens — kept (renaming logs out all users,
@@ -501,16 +503,16 @@ Code changes (all 4 files pass node --check; inline <script> blocks re-checked):
   - index.html: title, print footers (@page + data-filename), print
     disclaimer, header wordmark (now Lynx #7bbde8 light / Eye #1f6fb2 dark —
     colors FLIPPED from old Axiom-dark/Anare-light), persona label
-    "LynxEye Assist", AND the nav logo: the old gray-gears + green-scope-wave
+    "LynxEyes Assist", AND the nav logo: the old gray-gears + green-scope-wave
     <canvas id="nav-logo"> animation was REPLACED with an inline animated SVG
     of the new eye+2-gears mark (same id, so the L270/L290 responsive CSS still
     applies; reduced-motion freeze included). Dead canvas <script> block removed.
   - app.js: upgrade-modal wordmark, RAG-prompt product name, AI system-prompt
-    persona ("You are LynxEye Assist"), free-trial watermark, report print
+    persona ("You are LynxEyes Assist"), free-trial watermark, report print
     header (ph-name), dev comment. axiomPrint kept.
   - fleet.html: title, 2× login-app-name, fleet-nav-name.
   - admin.html: title, 2× headings, body text.
-  - AI persona AxiomAssist → "LynxEye Assist" (report header + system prompt).
+  - AI persona AxiomAssist → "LynxEyes Assist" (report header + system prompt).
 
 Logo assets produced (in outputs, need adding to repo):
   - lynxeye-logo.svg (animated, prefers-reduced-motion freeze) — web/login use
@@ -518,7 +520,7 @@ Logo assets produced (in outputs, need adding to repo):
   Mark = open almond eye (two light-blue lid strokes) + two dark-blue gears
   meshing at true pitch distance, wordmark Lynx(light)/Eye(dark) beneath.
 
-Docs (this pass): product name → LynxEye in live prose across CONTEXT /
+Docs (this pass): product name → LynxEyes in live prose across CONTEXT /
 DECISIONS / STATUS / ARCHITECTURE / DEPLOY_CHECKLIST. Preserved as-is: all
 esimconnect "don't use this name" warnings, the 404-incident history, the
 stale-README-link debt notes, session logs. Corrected 3 stale live URLs
@@ -528,7 +530,7 @@ ARCHITECTURE (was esimconnect, now KairosAxiom). Local disk paths
 axiomanare-proxy.js) kept — those are real folder/file names, not the product.
 
 STILL OPEN / next session:
-  - Rename the Supabase project DISPLAY label to LynxEye in the dashboard
+  - Rename the Supabase project DISPLAY label to LynxEyes in the dashboard
     (30-sec UI action, ref untouched — same as was done for Juzgo).
   - Fix README.md's stale live link (limykdavid-maker... 404) — README not in
     this project bundle, do it in the repo directly.
@@ -536,8 +538,73 @@ STILL OPEN / next session:
     one; point print/PDF header at the static SVG if desired.
   - Branch + DEPLOY_CHECKLIST pass before merging to main. No diagnostic/FFT/
     scoring logic changed, so CWRU re-run not strictly required, but eyeball one
-    generated AI report to confirm "LynxEye Assist" renders and streaming works
+    generated AI report to confirm "LynxEyes Assist" renders and streaming works
     (persona change touches the AI prompt path).
   - Decide later: rename GitHub repo + add lynxeye.io custom domain (with the
     Auth/CORS/Stripe redirect updates that entails).
+```
+
+
+## Session Log — 7 Aug 2026 (Rebrand spelling fix — LynxEye → LynxEyes + new nav logo)
+```
+Product name corrected to the intended spelling: LynxEye (singular) → LynxEyes
+(plural). The 20 Jul singular was an error, not a deliberate choice. Same
+display-name-only discipline as 20 Jul — no internal identifiers touched.
+
+Pushed as commit fe16898 (branch main; thumb-drive repo at D:, GENESIS-PRJ3).
+
+Code changes (all pass node --check; 3 inline index.html script blocks re-checked):
+  - index.html: title, comment, print footers (@page + print-disclaimer content),
+    nav aria-label, "LynxEyes Assist" card heading. NAV LOGO REPLACED: the old
+    animated eye+gears <svg id="nav-logo"> + HTML wordmark ("Lynx"+"Eye" spans) +
+    two mono taglines were all removed and replaced by a single <img> lockup
+    (lynxeyes-logo.png) wrapped in a home link, height:64px, scaling to 52/42px at
+    the 900/600px breakpoints. Dead #nav-logo / .logo-tag / .logo span responsive
+    rules removed. Favicon <link> -> lynxeyes-favicon.png (type image/png).
+  - app.js: upgrade-modal wordmark (LYNXEYES), diagnostic-engine comment, RAG-prompt
+    product name, AI persona ("You are LynxEyes Assist"), free-trial watermark
+    (LYNXEYES FREE TRIAL), print header ph-name. axiomPrint() name UNCHANGED.
+  - fleet.html: title, 2x login-app-name, fleet-nav-name; favicon link.
+  - admin.html: title, 2x headings, body text; favicon link.
+
+New assets committed to repo root (siblings of index.html):
+  - lynxeyes-logo.png (128 KB) — full nav lockup: lynx head + "LynxEyes" wordmark
+    + "Predictive Condition Monitoring" tagline. Layout A (whole-lockup image).
+  - lynxeyes-favicon.png (3 KB) — head-only crop, browser-tab favicon.
+  Old lynxeye-logo-static.svg is now UNREFERENCED (left in repo; delete later if
+  wanted). Old animated-SVG nav logo is retired (not preserved elsewhere).
+
+Tagline: adopted "Predictive Condition Monitoring" (baked into the lockup image),
+replacing the two prior mono taglines ("AGNOSTIC · AUGMENTED DATA ANALYSING" +
+"Condition monitoring for rotary motors & pumps").
+
+KNOWN INTERIM DEBT (accepted, logged in DECISIONS Part B + Part C):
+  - The lockup is TEAL/GREEN on the blue app — off-palette vs the locked brand
+    blues (#7bbde8 / #1f6fb2). Do NOT treat teal as the new palette.
+  - The wordmark is now baked pixels (raster): softens slightly on retina, can't be
+    restyled via CSS. Asset was a flattened PNG-in-SVG wrapper, not true vector.
+  - Fix path: replace with a real BLUE VECTOR SVG later — clean one-file swap.
+
+Verified live (kairosaxiom.github.io/AxiomAnare, URL unchanged): nav lockup renders
+on cream, favicon shows in tab, title reads "LynxEyes — Vibration Diagnostic
+Engine". Still to eyeball: one generated AI report showing "LynxEyes Assist"
+persona + streaming (the one behavioural change in the AI-prompt path).
+
+Domain: lynxeye.io (singular) kept; lynxeyes.io (plural) being acquired. When wired:
+Supabase Auth redirect allow-list + Worker CORS + Stripe success/cancel URLs.
+
+Docs updated this pass (all 5): product name -> LynxEyes in prose across CONTEXT /
+DECISIONS / STATUS / ARCHITECTURE / DEPLOY_CHECKLIST; DECISIONS new Part B entry
+("Why the product name is LynxEyes") + Part C raster-logo note; STATUS HEAD ->
+fe16898 + date. Preserved verbatim: all esimconnect warnings, AxiomAnare repo/
+folder/ref/worker names, filenames axiomanare_*, ax_* keys, axiomPrint().
+
+Next session should:
+  - Eyeball a generated AI report for the "LynxEyes Assist" persona + streaming.
+  - Rename the Supabase project DISPLAY label to LynxEyes in the dashboard (ref
+    untouched) — was noted for 20 Jul, still worth confirming it reads LynxEyes.
+  - Fix README.md stale live link (limykdavid-maker... 404) — do in repo directly.
+  - Optional housekeeping: delete unreferenced lynxeye-logo-static.svg; get a real
+    blue vector SVG of the lynx mark to replace the interim teal raster.
+  - Resume Phase 1.5 stress testing (free-flow under RLS, fleet flow, Stripe wiring).
 ```
