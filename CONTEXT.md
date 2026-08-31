@@ -1,6 +1,9 @@
 # LynxEyes — Living Project Context
-Last updated: 7 Aug 2026
-Latest code commit: fe16898 (LynxEyes rename + new nav logo/favicon, pushed).
+Last updated: 31 Aug 2026
+Latest code commit: 5aa2904 (KB reference chunks, repo-only — embed deferred).
+  Prior functional commit: 411a618 (multiChannel parse-once freeze fix).
+  NOTE: diagnostic/scoring path UNCHANGED this session — CWRU bearing-scorer bug
+  confirmed but NOT yet fixed. See Session Log 31 Aug + "Next session".
 Earlier uncommitted 6 Jul index.html UI work (cream theme + KPI strip) is now
 superseded by / folded into the committed index.html; see Session Log below.
 Company: Kairos Ventures Pte Ltd
@@ -607,4 +610,125 @@ Next session should:
   - Optional housekeeping: delete unreferenced lynxeye-logo-static.svg; get a real
     blue vector SVG of the lynx mark to replace the interim teal raster.
   - Resume Phase 1.5 stress testing (free-flow under RLS, fleet flow, Stripe wiring).
+```
+
+## Session Log — 31 Aug 2026 (Diagnostic engine investigation — bearing scorer root cause + KB groundwork)
+```
+Started as a "stuck at Initialising…" freeze report; became a deep diagnostic-engine
+investigation. NOTHING in the diagnostic/scoring path was changed this session — the
+fix is SPECIFIED but NOT written. Read "Next session" before touching code.
+
+FREEZE (fixed earlier this session — already pushed 411a618):
+  - Multi-channel pipeline re-parsed the full raw file multiple times synchronously
+    (mcResolveSampleRate + per-channel mcExtractColumn). On a 14 MB / 3-channel file
+    this wedged the main thread for minutes → the "stuck at Initialising…" symptom.
+  - Fix applied: parse-once (mcParseOnce → MC.rawTable); all consumers reuse the one
+    parse. Only one Papa.parse(raw…) remains in multiChannel.js. node --check clean.
+  - Small files unaffected. A 14 MB file still blocks briefly even parsed once —
+    streaming / worker:true parse deferred to Phase 2.
+  - How it was found: clean Console + empty Network + pause landing only in supabase-js
+    idle timer → main-thread block before any fetch, NOT auth/RLS.
+
+CWRU BENCHMARK — CONFIRMED FAILURE (not yet fixed):
+  Ran all 5 CWRU drive-end files with correct params:
+    Bearing 6205-2RS JEM SKF (N=9, Bd=0.3126 in, Pd=1.537 in, β=0°),
+    sample rate 12000 Hz, RPM 1797. Verified multipliers BPFO 3.5848× / BPFI 5.4152× /
+    BSF 2.3574× / FTF 0.3983× (BPFO→107.4 Hz at 1797 rpm).
+
+  | File     | True label | Zone | RMS   | Primary shown            | Correct-bearing score |
+  |----------|-----------|------|-------|--------------------------|-----------------------|
+  | Normal   | healthy   | B    | 2.75  | Mech Unbalance (45)      | Rolling-Elem 24 (Ind) |
+  | Ball_007 | ball      | D    | 9.75  | Electrical-Rotor Bar(16) | Rolling-Elem 13       |
+  | IR_007   | inner race| D    | 8.85  | Electrical-Rotor Bar(18) | Inner-Race not surfaced|
+  | OR_007   | outer race| D    | 9.90  | Mech Unbalance           | Outer-Race Trace      |
+  | OR_021   | outer race| D    | 22.60 | Mech Unbalance (50)      | Outer-Race Trace (5)  |
+
+  Result: 0/5 on fault-type ID. Every fault file ranked shaft-1× content (Mech Unbalance /
+  vib-derived Electrical Rotor Bar) as primary; correct bearing category always Trace/Low —
+  even OR_021 at 22.6 mm/s RMS scored Outer-Race = Trace.
+
+  Entering correct 6205 geometry changed NOTHING vs earlier blank/default runs → geometry
+  was NOT the cause. Engine already computed correct bearing frequencies (BPFO 107.4,
+  BSF 70.6 Hz) both before and after.
+
+  ROOT CAUSE (confirmed in app.js): CONFIG.envelope_bands.race = {lo:3000, hi:4500} Hz is
+  mis-placed for 12 kHz data (Nyquist 6 kHz). CWRU 6205 resonance sits ~2–4 kHz, so a
+  3000–4500 Hz window demodulates a near-empty slice → race-band envelope BER ≈ 1.0 →
+  berToScore returns 0 (returns 0 for BER ≤ 1.0) → BPFO/BPFI (outer/inner race) always Trace.
+  Roll band (BSF) survives via multi-path fallback → low-but-nonzero. The split between which
+  faults die is exactly along which band each uses.
+  FIX (specified, NOT written): Nyquist-adaptive race band — lower edge ~0.10×Nyq clamped
+  ≥1500 Hz, upper edge ~0.85×Nyq — captures 2–4 kHz resonance on 12 kHz AND works on 48 kHz.
+  Keep CONFIG values as fallback.
+
+  SECOND HYPOTHESIS — VERIFY BEFORE CODING (sizes the fix): are CF/kurtosis and
+  fft._rawSignal (envelope input) computed on ACCELERATION or on integrated VELOCITY?
+  Integration low-passes away the impulses that define a bearing fault; if either is
+  post-integration, bearings are suppressed in BOTH time + freq domains. Symptom that fits:
+  CF/kurtosis read "Normal" on all 5 fault files (a real spall should raise them). CHECK FIRST.
+
+  A4 — enforced as a score CEILING (electrical ≤19) but NOT as a ranking HIERARCHY: capped
+  electrical (16–18) still outranks real bearing (9–13) as primary. Fix needs category-
+  precedence in ranking (bearing/mechanical always ranks above vib-derived electrical when
+  present at non-trace confidence). Fault Severity Radar reads the ranking → inherits the
+  error → self-corrects once ranking is fixed.
+
+ACCEPTANCE BAR REDEFINED — Smith & Randall (2015) benchmark:
+  - CWRU is a fault-LABEL benchmark only; does NOT validate RMS/zone/RUL (lab accel data,
+    no ground truth; ISO 10816-3 velocity zones are a field-machine basis — validity boundary
+    to surface, not hide).
+  - Per S&R, records range from easily diagnosable to UNDIAGNOSABLE by any method; ball faults
+    are among the hardest; many records show looseness-like content.
+  - So "5/5 confident" is the WRONG bar. Correct acceptance:
+      OR_007 / OR_021 / IR_007 → must identify correct bearing fault as leading.
+      Ball_007 → indicative / low-confidence (hedged) call is ACCEPTABLE and correct.
+      Normal   → must stay Zone A/B, no confident fault.
+  - Ringfences that must still hold after any fix: A1 (no invented ISO clauses; citations
+    unchanged), A2 (sub-threshold → indicative language), A3 (no over-diagnosis on clean data),
+    A4 (electrical cap intact; electrical never outranks bearing/mechanical), A12 (assumed-
+    input flags still fire).
+
+ISO MODEL CLARIFIED (two axes — this is the fix spec):
+  - Severity ("how bad") = velocity RMS vs ISO 10816-3 zones A–D. A loudness gauge; does NOT
+    identify the fault.
+  - Fault TYPE ("what is it") = which frequency carries the energy, per ISO 13379-1 / 13373,
+    with confidence language (A2). Bearings require ENVELOPE demodulation, not dominant-peak
+    ranking (in the raw spectrum bearings are buried under the 1× shaft comb).
+  - ISO prescribes the METHOD + severity SCALE, NOT a single amplitude threshold that
+    "confirms" a fault type. A machine can be Zone D from unbalance, misalignment, OR a
+    bearing. Engine currently conflates loudness (Zone D) with diagnosis (tallest peak);
+    separating the two axes is the correct "ISO-governed" wiring.
+
+KB GROUNDWORK (committed 5aa2904, repo-only — EMBED DEFERRED to code-fix validation):
+  9 house-authored chunks, original wording, cited not copied (A1):
+    KB/Reference/ (5): bearing_01_raw_spectrum_insufficient, bearing_02_time_domain_signature,
+      bearing_03_envelope_and_processing, bearing_04_corroboration_confidence,
+      bearing_05_two_axis_severity_vs_type.
+    KB/Reports/ (4): cwru_benchmark_01_overview, cwru_benchmark_02_record_notes_partial (PARTIAL),
+      cwru_benchmark_03_acceptance_mapping, cwru_benchmark_04_gap_note.
+  - cwru_benchmark_02 is PARTIAL — only records confirmable from secondary sources (209, 222,
+    197, 235). Full per-record table needs a LEGITIMATE copy of Smith & Randall (2015); gap +
+    how-to-close recorded in cwru_benchmark_04. Do NOT invent the missing rows (A1).
+  - Embed deferred on purpose — chunks improve AI reasoning/narrative but do NOT fix the scorer.
+    Embed alongside code-fix validation so both are verified in one clean pass.
+  - On embed (192 → 201): snapshot knowledge_chunks first (A9, no Free-tier backups), admin/
+    service-role insert, and DEDUP-CHECK against existing CWRU_Dataset_Overview.md +
+    AI_Fault_Content.md already in KB/Reference/.
+
+RULED OUT this session (so they're not re-chased):
+  - NOT an auth/RLS/Supabase freeze (Network empty; keep-alive ping OK).
+  - NOT a unit/integration/zone bug — Normal→Zone B (2.75), OR_021→Zone D (22.6); severity
+    scales correctly with real RMS.
+  - NOT wrong bearing geometry — frequencies already correct; entering 6205 changed nothing.
+  - NOT a fix that should target "5/5" — that would push toward over-diagnosis (A2/A3).
+
+Next session (in order):
+  1. VERIFY acceleration-vs-velocity for CF/kurtosis + fft._rawSignal. Sizes the fix.
+  2. WRITE app.js fix: Nyquist-adaptive race band + A4 ranking hierarchy (radar follows).
+     node --check; sandbox where possible. Consider temporary BER debug logging so the first
+     re-run SHOWS race BER rising on OR files and staying ~1.0 on Normal (A2/A3 guard).
+  3. RE-RUN all 5 CWRU files → acceptance bar above. Ringfence check: A1/A2/A3/A4/A12.
+  4. THEN embed the 9 KB chunks + validate together.
+  5. Housekeeping still open: README stale link; emoji cleanup (17); color-literal→var();
+     Sx.x ISO clause audit (A1); Supabase project display-label rename to LynxEyes.
 ```
