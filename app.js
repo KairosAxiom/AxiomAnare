@@ -1,3 +1,7 @@
+// ── VERSION (update each deploy for verification) ─────────────────────────
+const SCORER_VERSION = 'ba160b1-4'; // two-tier output: severity (confident) + fault type (honest)
+console.log('[LynxEyes] scorer version:', SCORER_VERSION);
+
 // ══ SUPABASE CONFIG ══════════════════════════════════════════════════════
 const SUPABASE_URL = 'https://zjfhxutcvjxootoekade.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpqZmh4dXRjdmp4b290b2VrYWRlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUxMjgzODAsImV4cCI6MjA5MDcwNDM4MH0.5yGgSjALJhTQm5Ud3W-fU2Bgo-3PkziaS0oLrGMYQ9o';
@@ -2081,10 +2085,16 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
   const bsfHz  = shaft * getFreqMult('r_bsf',  CONFIG.fault_frequency_rules.find(r => r.rule_id === 'r_bsf')?.freq_multiplier  || 2.4);
   const ftfHz  = shaft * getFreqMult('r_ftf',  CONFIG.fault_frequency_rules.find(r => r.rule_id === 'r_ftf')?.freq_multiplier  || 0.4);
 
-  const maxRaceBer = envRace
-    ? Math.max(berAvg(envRace.freqs, envRace.mags, bpfoHz, 0.15, 3),
-               berAvg(envRace.freqs, envRace.mags, bpfiHz, 0.15, 3))
-    : 0;
+  // Pre-compute direct (raw FFT) BER for BPFO and BPFI — used in maxRaceBer AND scoring
+  const bpfoDirectBer = berAvg(freqs, mags, bpfoHz, 0.15, 3);
+  const bpfiDirectBer = berAvg(freqs, mags, bpfiHz, 0.15, 3);
+
+  // maxRaceBer: dual-path — envelope OR direct, whichever is stronger.
+  // Including direct BER ensures OR files (where fault energy may be in the raw spectrum
+  // rather than resonance band) correctly trigger mechCap suppression of shaft content.
+  const bpfoEnvBer = envRace ? berAvg(envRace.freqs, envRace.mags, bpfoHz, 0.15, 3) : 0;
+  const bpfiEnvBer = envRace ? berAvg(envRace.freqs, envRace.mags, bpfiHz, 0.15, 3) : 0;
+  const maxRaceBer = Math.max(bpfoEnvBer, bpfoDirectBer, bpfiEnvBer, bpfiDirectBer);
   const bsfBerRoll = envRoll ? berAvg(envRoll.freqs, envRoll.mags, bsfHz, 0.15, 3) : 0;
   const bsfBerRace = envRace ? berAvg(envRace.freqs, envRace.mags, bsfHz, 0.15, 3) : 0;
   const bsfBer     = Math.max(bsfBerRoll, bsfBerRace);
@@ -2093,16 +2103,11 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
   const maxBearingBer = Math.max(maxRaceBer, maxRollBer);
 
   // [DEBUG — remove before final commit] BER diagnostics for CWRU re-run verification
-  // Confirm race BER rises on OR/IR files and stays ~1.0 on Normal
-  const _bpfoEnvBer = envRace ? berAvg(envRace.freqs, envRace.mags, bpfoHz, 0.15, 3) : 0;
-  const _bpfoDirectBer = berAvg(freqs, mags, bpfoHz, 0.15, 3);
-  const _bpfiEnvBer = envRace ? berAvg(envRace.freqs, envRace.mags, bpfiHz, 0.15, 3) : 0;
-  const _bpfiDirectBer = berAvg(freqs, mags, bpfiHz, 0.15, 3);
-  console.log('[BER-DEBUG] fs='+fft.fs+' Nyq='+nyqHz+' raceBand='+raceBand.lo+'-'+raceBand.hi+' Hz'
-    +' | bpfoHz='+bpfoHz.toFixed(1)+' bpfiHz='+bpfiHz.toFixed(1)
-    +' | BPFO env='+_bpfoEnvBer.toFixed(3)+' direct='+_bpfoDirectBer.toFixed(3)+' eff='+Math.max(_bpfoEnvBer,_bpfoDirectBer*0.7).toFixed(3)
-    +' | BPFI env='+_bpfiEnvBer.toFixed(3)+' direct='+_bpfiDirectBer.toFixed(3)+' eff='+Math.max(_bpfiEnvBer,_bpfiDirectBer*0.7).toFixed(3)
-    +' | mechCap will be '+(maxBearingBer > CONFIG.bearing_ber_threshold ? '10 (bearing present)' : '95 (no bearing)'));
+  console.log('[BER-DEBUG] fs='+fft.fs+' raceBand='+raceBand.lo+'-'+raceBand.hi+' Hz'
+    +' | BPFO env='+bpfoEnvBer.toFixed(3)+' direct='+bpfoDirectBer.toFixed(3)+' eff='+Math.max(bpfoEnvBer,bpfoDirectBer).toFixed(3)
+    +' | BPFI env='+bpfiEnvBer.toFixed(3)+' direct='+bpfiDirectBer.toFixed(3)+' eff='+Math.max(bpfiEnvBer,bpfiDirectBer).toFixed(3)
+    +' | maxRaceBer='+maxRaceBer.toFixed(3)
+    +' | mechCap='+(maxBearingBer > CONFIG.bearing_ber_threshold ? '10 (bearing)' : '95 (none)'));
 
   // Mechanical suppression cap — ISO 13379-1:2012 §5.2
   // When bearing envelope BER exceeds threshold, mechanical fault scores capped at 10%
@@ -2151,29 +2156,24 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
     // ISO 13379-1:2012 Annex A §A.3 — race band envelope BER
     // Load zone boost: BPFO ± shaft sidebands when OR in load zone
     if (rule.rule_id === 'r_bpfo') {
-      // Dual-path: envelope BER (primary) + direct raw FFT BER (fallback ×0.7).
-      // When envelope SNR is poor, direct FFT path provides second detection route.
-      // Same pattern as BSF bsfDirect — ISO 13379-1:2012 Annex A §A.3
-      const eArr = envRace;
-      const eBer = eArr ? berAvg(eArr.freqs, eArr.mags, fc, rule.bandwidth_pct, rule.harmonic_count) : 0;
-      const directBer = berAvg(freqs, mags, fc, rule.bandwidth_pct, rule.harmonic_count);
-      const effectiveBer = Math.max(eBer, directBer * 0.7);
+      // Dual-path: envelope BER (primary) + direct raw FFT BER (full weight).
+      // OR faults produce direct structural impacts readable in raw spectrum.
+      // Pre-computed bpfoEnvBer / bpfoDirectBer reused — no redundant BER calls.
+      // ISO 13379-1:2012 Annex A §A.3
+      const effectiveBer = Math.max(bpfoEnvBer, bpfoDirectBer);
       h2 = rule.harmonic_count;
       sc = berToScore(effectiveBer, rule.confidence_weight);
       sc += Math.round((cfB + kB) * rule.confidence_weight * snrFactor);
       // Load zone shaft modulation — ISO 13379-1:2012 §A.3
-      if ((loadZone === 'centered' || loadZone === 'orthogonal') && effectiveBer > 1.3 && eArr) {
-        const sb = sidebandCount(eArr.freqs, eArr.mags, fc, shaft, rule.bandwidth_pct, 2);
+      if ((loadZone === 'centered' || loadZone === 'orthogonal') && effectiveBer > 1.3 && envRace) {
+        const sb = sidebandCount(envRace.freqs, envRace.mags, fc, shaft, rule.bandwidth_pct, 2);
         if (sb >= 2) sc = Math.round(sc * 1.3);
       }
 
     // ── BEARING — INNER RACE (BPFI) ───────────────────────────────────────
     // ISO 13379-1:2012 Annex A §A.3 — race band envelope BER + direct FFT fallback
     } else if (rule.rule_id === 'r_bpfi') {
-      const eArr = envRace;
-      const eBer = eArr ? berAvg(eArr.freqs, eArr.mags, fc, rule.bandwidth_pct, rule.harmonic_count) : 0;
-      const directBer = berAvg(freqs, mags, fc, rule.bandwidth_pct, rule.harmonic_count);
-      const effectiveBer = Math.max(eBer, directBer * 0.7);
+      const effectiveBer = Math.max(bpfiEnvBer, bpfiDirectBer);
       h2 = rule.harmonic_count;
       sc = berToScore(effectiveBer, rule.confidence_weight);
       sc += Math.round((cfB + kB) * rule.confidence_weight * snrFactor);
@@ -2408,64 +2408,93 @@ function renderMgmtCard(d) {
   // AMBER  — Zone B OR Indicative fault (20-39) in Zone A/B
   // RED    — Zone C or D (always) OR Elevated+ fault (>=40) OR health < 40
 
-  if (zone === 'D') {
-    // Zone D — always red, always urgent, ISO 10816-3 mandates shutdown
-    rag = 'red';
-    iconChar = '&#128308;';
-    if (topPct >= 40) {
-      statusText = 'Immediate Action Required';
-      findingText = top
-        ? plainFaultText(top) + ' Zone D — risk of machine damage. Immediate shutdown warranted.'
-        : 'Zone D — dangerous vibration level. Immediate shutdown warranted per ISO 10816-3.';
-    } else if (topPct >= 20) {
-      statusText = 'Action Required';
-      findingText = top
-        ? plainFaultText(top) + ' Zone D confirmed. Condition is dangerous. Arrange inspection within 7 days.'
-        : 'Zone D — dangerous vibration level. Arrange inspection within 7 days.';
-    } else {
-      statusText = 'Action Required';
-      findingText = 'Zone D — dangerous vibration level. Risk of machine damage. Immediate shutdown warranted per ISO 10816-3:2009 S5.4.';
+  // DECISIONS A13 — Two-tier output model
+  // Tier 1 (always confident): ISO zone sets urgency and required action.
+  // Tier 2 (honest confidence): fault type qualifies WHY — shaft-synchronous faults
+  //   stated as likely driver; bearing faults stated as indicative activity only.
+  // Single-reading caveat: Zone C/D from one file without baseline recommends
+  //   re-measurement before shutdown decision — severity is real, but one reading
+  //   cannot rule out transient artifacts.
+  const topIsBearing = isBearingFault(top);
+  const singleReading = d.singleFile; // true when no baseline history exists
+
+  // Build the fault driver clause — honest about what we know
+  function faultDriverClause(fault, pct) {
+    if (!fault) return '';
+    if (isBearingFault(fault)) {
+      // Bearing: indicative only — never say "confirmed" on single reading
+      return ' ' + plainFaultText(fault);
     }
-  } else if (zone === 'C') {
-    // Zone C — always red, schedule imminent maintenance
-    rag = 'red';
-    iconChar = '&#128308;';
-    statusText = topPct >= 40 ? 'Immediate Action Required' : 'Action Required';
-    findingText = top
-      ? plainFaultText(top) + ' Condition is poor. Arrange inspection within ' + (rul < 30 ? '7' : '30') + ' days.'
-      : 'Zone C — unsatisfactory vibration level. Schedule maintenance within 30 days per ISO 10816-3.';
-  } else if (topPct >= 65) {
-    // Strong or Critical fault in Zone A/B — escalate to red
-    rag = 'red';
-    iconChar = '&#128308;';
-    statusText = 'Immediate Action Required';
-    findingText = top
-      ? plainFaultText(top) + ' Fault severity is high. Arrange inspection immediately — do not defer.'
-      : 'Critical vibration fault detected. Immediate engineering review required.';
-  } else if (topPct >= 40) {
-    // Elevated fault in Zone A/B — red
+    // Shaft-synchronous: confident from raw FFT
+    return ' ' + plainFaultText(fault);
+  }
+
+  // Single-reading caveat appended to Zone C/D when no trend history
+  const singleReadingNote = singleReading
+    ? ' Re-measure to confirm before shutdown decision.'
+    : '';
+
+  if (zone === 'D') {
+    // Zone D — always red, always urgent. Urgency from ISO, not from fault confidence.
     rag = 'red';
     iconChar = '&#128308;';
     statusText = 'Action Required';
-    findingText = top
-      ? plainFaultText(top) + ' Do not defer — arrange inspection within ' + (rul < 30 ? '7' : rul < 90 ? '30' : '90') + ' days.'
-      : 'Elevated fault detected. Engineering review required.';
+    if (top && !topIsBearing && topPct >= 20) {
+      // Shaft-synchronous fault is clear driver — state it confidently
+      findingText = 'Zone D — dangerous vibration level.' + faultDriverClause(top, topPct)
+        + ' Arrange inspection immediately.' + singleReadingNote;
+    } else if (top && topIsBearing) {
+      // Bearing signal present but indicative — zone drives urgency, fault type hedged
+      findingText = 'Zone D — dangerous vibration level.' + faultDriverClause(top, topPct)
+        + ' Arrange inspection immediately.' + singleReadingNote;
+    } else {
+      // No clear fault type — zone drives action
+      findingText = 'Zone D — dangerous vibration level. Fault driver unclear from single measurement — inspection required.'
+        + singleReadingNote;
+    }
+  } else if (zone === 'C') {
+    // Zone C — always red, schedule maintenance
+    rag = 'red';
+    iconChar = '&#128308;';
+    statusText = 'Action Required';
+    if (top && !topIsBearing && topPct >= 20) {
+      findingText = 'Zone C — unsatisfactory vibration level.' + faultDriverClause(top, topPct)
+        + ' Schedule maintenance within ' + (rul < 30 ? '7' : '30') + ' days.' + singleReadingNote;
+    } else if (top && topIsBearing) {
+      findingText = 'Zone C — unsatisfactory vibration level.' + faultDriverClause(top, topPct)
+        + ' Schedule maintenance within ' + (rul < 30 ? '7' : '30') + ' days.' + singleReadingNote;
+    } else {
+      findingText = 'Zone C — unsatisfactory vibration level. Schedule maintenance within 30 days per ISO 10816-3.'
+        + singleReadingNote;
+    }
+  } else if (topPct >= 65 && !topIsBearing) {
+    // Strong shaft-synchronous fault in Zone A/B — escalate to red (confident)
+    rag = 'red';
+    iconChar = '&#128308;';
+    statusText = 'Action Required';
+    findingText = plainFaultText(top) + ' Fault severity is high — arrange inspection immediately.';
+  } else if (topPct >= 40 && !topIsBearing) {
+    // Elevated shaft-synchronous fault in Zone A/B — red
+    rag = 'red';
+    iconChar = '&#128308;';
+    statusText = 'Action Required';
+    findingText = plainFaultText(top) + ' Arrange inspection within ' + (rul < 30 ? '7' : rul < 90 ? '30' : '90') + ' days.';
   } else if (topPct >= 20) {
-    // Indicative fault in Zone A/B — amber
+    // Developing signal — amber. Bearing or shaft-synchronous, both hedged at this level.
     rag = 'amber';
     iconChar = '&#128993;';
     statusText = 'Monitor Closely';
     findingText = top
       ? plainFaultText(top) + ' Fault signal is developing. Schedule inspection at next planned maintenance window.'
-      : 'Developing fault signal detected. Increase monitoring frequency.';
+      : 'Developing signal detected. Increase monitoring frequency.';
   } else if (zone === 'A' && hi >= 65) {
-    // No confirmed fault, Zone A, good health — green
+    // Zone A, good health, no significant signal — green
     rag = 'green';
     iconChar = '&#128994;';
     statusText = 'Machine is Healthy';
     findingText = topPct >= 8
-      ? 'No significant faults detected. A weak background signal was noted — no action required. Continue routine monitoring.'
-      : 'No faults detected. Machine is operating normally. Continue routine monitoring schedule.';
+      ? 'No significant faults detected. Weak background signal noted — no action required. Continue routine monitoring.'
+      : 'No faults detected. Machine operating normally. Continue routine monitoring schedule.';
   } else {
     // Zone B or degraded health, no significant fault
     rag = 'amber';
@@ -2474,12 +2503,12 @@ function renderMgmtCard(d) {
     findingText = 'Vibration elevated above baseline. No confirmed fault — review at next maintenance window.';
   }
 
-  // Final override — PRA trend with any amber upgrades to red
+  // Final override — PRA trend with amber upgrades to red
   if (trend === 'PRA' && rag === 'amber') {
     rag = 'red';
     iconChar = '&#128308;';
     statusText = 'Worsening — Act Soon';
-    findingText = (top ? plainFaultText(top) : 'Vibration') + ' Condition is deteriorating rapidly. Schedule maintenance now.';
+    findingText = (top ? plainFaultText(top) : 'Vibration level') + ' Condition deteriorating rapidly — schedule maintenance now.';
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -2505,16 +2534,29 @@ function renderMgmtCard(d) {
   rulSub.textContent = rul < 60 ? 'days — plan now' : rul < 180 ? 'days remaining' : 'days — good condition';
 }
 
+// Two-tier fault text — DECISIONS A13
+// Shaft-synchronous faults (unbalance, misalignment, looseness): stated as likely driver.
+//   Raw FFT peak ratios are reliable for these — confident language is appropriate.
+// Bearing faults (BPFO, BPFI, BSF, FTF): stated as indicative activity only.
+//   Single-file envelope/BER analysis cannot confirm bearing fault type without
+//   resonance frequency knowledge or trend data. Language reflects this honestly.
 function plainFaultText(fault) {
   const n = fault.name;
-  if (n.includes('Outer Race')) return 'Outer bearing surface wear detected.';
-  if (n.includes('Inner Race')) return 'Inner bearing surface wear detected.';
-  if (n.includes('Rolling Element')) return 'Bearing ball/roller wear detected.';
-  if (n.includes('Cage'))        return 'Bearing cage wear detected.';
-  if (n.includes('Imbalance'))   return 'Shaft imbalance detected — rotor may need balancing.';
-  if (n.includes('Misalignment'))return 'Shaft misalignment detected — check coupling alignment.';
-  if (n.includes('Looseness'))   return 'Mechanical looseness detected — check hold-down bolts.';
-  return n + ' detected.';
+  // Bearing faults — indicative language always on single reading
+  if (n.includes('Outer Race'))    return 'Bearing signal activity at outer race frequency (BPFO). Indicative — inspect bearing.';
+  if (n.includes('Inner Race'))    return 'Bearing signal activity at inner race frequency (BPFI). Indicative — inspect bearing.';
+  if (n.includes('Rolling Element'))return 'Bearing signal activity at ball spin frequency (BSF). Indicative — inspect bearing.';
+  if (n.includes('Cage'))          return 'Bearing signal activity at cage frequency (FTF). Indicative — inspect bearing.';
+  // Shaft-synchronous faults — confident language, reliable from raw FFT
+  if (n.includes('Imbalance'))     return 'Dominant 1x shaft frequency — mechanical unbalance is the likely driver.';
+  if (n.includes('Misalignment'))  return 'Elevated 2x/3x shaft harmonics — shaft misalignment is the likely driver.';
+  if (n.includes('Looseness'))     return 'Sub-harmonic and multiple shaft harmonics — mechanical looseness is the likely driver.';
+  return n + ' signal detected.';
+}
+
+// Returns true if fault is bearing type (envelope-dependent, indicative only on single reading)
+function isBearingFault(fault) {
+  return fault && fault.category === 'bearing';
 }
 // == END MANAGEMENT SUMMARY CARD ============================================
 
@@ -3082,19 +3124,35 @@ async function streamClaude(){
     flags.length?flags.map(f=>'(!) '+f).join('\n'):' -  No flags.',
     '',
     ragSection,  // injected KB context — empty string if RAG unavailable
+    '=== TWO-TIER OUTPUT MODEL (DECISIONS A13) ===',
+    'TIER 1 — SEVERITY (always state with full confidence):',
+    '  ISO zone sets urgency and required action. Zone D = act now. Zone C = schedule urgently.',
+    '  RMS velocity vs ISO 10816-3 boundaries is objective measurement — never hedge this.',
+    'TIER 2 — FAULT TYPE (honest confidence):',
+    '  Shaft-synchronous faults (unbalance, misalignment, looseness): raw FFT peak ratios are',
+    '  reliable — state as LIKELY DRIVER when confidence >= 20%.',
+    '  Bearing faults (BPFO, BPFI, BSF, FTF): single-file envelope analysis cannot confirm',
+    '  bearing fault type without resonance frequency knowledge or trend data.',
+    '  ALWAYS use INDICATIVE language for bearing faults: "signal activity at BPFO frequency"',
+    '  NEVER say "bearing fault confirmed" or "outer race defect detected" on a single reading.',
+    '  Recommend: re-measure at next interval, track CF and kurtosis trend to build confidence.',
+    'SINGLE READING CAVEAT: if trend is DDU (insufficient history), note that a single measurement',
+    '  cannot establish trend direction and re-measurement is recommended before any shutdown decision.',
+    '',
     '=== ANTI-HALLUCINATION RULES ===',
     '1. Use ONLY values from the NVR RECORD above. Do not invent bearing models, temperatures, or values not in this data.',
-    '2. Obey every DATA QUALITY FLAG.',
-    '3. Fault <40% confidence = indicative language only, never confirmed.',
-    '4. Cite ONLY ISO clauses from the NVR record above.',
-    '5. Always quote RUL CI. State it cannot replace engineering judgement.',
-    ragChunks.length ? '6. Where KNOWLEDGE BASE CONTEXT excerpts are directly relevant, you may reference them to support your analysis. Do not quote them verbatim — synthesise into your report.' : '',
+    '2. Obey every DATA QUALITY FLAG — if sample rate was assumed, caveat all frequency-dependent findings.',
+    '3. Bearing fault confidence is ALWAYS indicative on a single reading — never use confirmed language.',
+    '4. Shaft-synchronous fault (unbalance/misalignment/looseness) at >= 20% = likely driver language is appropriate.',
+    '5. Cite ONLY ISO clauses from the NVR record above.',
+    '6. Always quote RUL CI. State it cannot replace engineering judgement.',
+    ragChunks.length ? '7. Where KNOWLEDGE BASE CONTEXT excerpts are directly relevant, you may reference them to support your analysis. Do not quote them verbatim — synthesise into your report.' : '',
     '','=== REPORT  -  6 SECTIONS ===',
-    '1. DIAGNOSTIC SUMMARY  -  Zone, RMS, trend, limitations.',
-    '2. PRIMARY FAULT ANALYSIS  -  Interpret top fault(s), qualify confidence, cite ISO 13379-1 clause.',
-    '3. SEVERITY ASSESSMENT  -  Interpret zone, cite exact ISO clause from NVR record.',
-    '4. RECOMMENDED ACTIONS  -  Immediate/Short-term/Long-term. Each must cite an ISO clause.',
-    '5. MONITORING GUIDANCE  -  Interval and parameters. Cite ISO 13373-1 clause.',
+    '1. SEVERITY ASSESSMENT  -  Zone, RMS, action required. State urgency from ISO zone — full confidence.',
+    '2. FAULT ANALYSIS  -  Shaft-synchronous findings (likely driver if present). Bearing findings (indicative only, explicit hedge).',
+    '3. SUPPORTING INDICATORS  -  CF, kurtosis, deviation from baseline. What they suggest, not confirm.',
+    '4. RECOMMENDED ACTIONS  -  Immediate/Short-term/Long-term. Driven by zone severity, not fault confidence. Each must cite an ISO clause.',
+    '5. MONITORING GUIDANCE  -  Interval and parameters. Recommend trend data to build bearing fault confidence. Cite ISO 13373-1 clause.',
     '6. RUL & PROGNOSTIC NOTE  -  Quote days and CI. Cite ISO 13381-1 clause. State limitations.',
   ].filter(s=>s!==undefined).join('\n');
   try{
