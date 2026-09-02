@@ -292,8 +292,13 @@ const CONFIG = {
   chatbot_config: { model_version:"claude-sonnet-5", max_output_tokens:1000, disclaimer_text:"AI-GENERATED ANALYSIS - IMPORTANT NOTICE: This output is intended to assist qualified maintenance and reliability engineers. It does not constitute a certified engineering determination. All corrective actions must be reviewed and authorised by a suitably qualified professional. Kairos Ventures Pte Ltd accepts no liability for any decision arising from reliance on this output without independent qualified engineering review." },
 
   // Envelope demodulation bands -- ISO 13373-2:2016 §7.5
-  // race: high-freq resonance band for race faults (BPFO, BPFI)
-  // roll: mid-freq band for rolling element / cage faults (BSF, FTF)
+  // race: resonance band for race faults (BPFO, BPFI).
+  //   These CONFIG values are FALLBACK DEFAULTS only — classifyFaults() computes a
+  //   Nyquist-adaptive race band at runtime: lo=max(1500,0.10×Nyq), hi=0.85×Nyq.
+  //   This covers CWRU 6205 resonance (~1–4 kHz at 12 kHz fs) AND high-fs files
+  //   (48 kHz → 2400–20400 Hz). Static fallback used only if fft.fs unavailable.
+  // roll: mid-freq band for rolling element / cage faults (BSF, FTF) — static, adequate.
+  // rollHigh: upper mid-band, BSF fallback — also overridden at runtime when fs known.
   envelope_bands: { race: { lo: 3000, hi: 4500 }, roll: { lo: 200, hi: 1800 }, rollHigh: { lo: 1800, hi: 5000 } },
 
   // Bearing BER suppression threshold -- ISO 13379-1:2012 §5.2
@@ -1826,12 +1831,20 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
   // ISO 13379-1:2012 §A.3 — OR defect in load zone shows shaft modulation
   const loadZone = (machineParams && machineParams.loadZonePosition) || 'centered';
 
-  // -- Demodulation bands from CONFIG — not hardcoded --
-  // Race band (BPFO, BPFI): high-frequency resonance excitation
-  // Roll band (BSF, FTF):   mid-frequency cage/ball modulation
-  // ISO 13373-2:2016 §7.5 — select band to maximise SNR at fault frequency
-  const raceBand = CONFIG.envelope_bands ? CONFIG.envelope_bands.race : { lo: 3000, hi: 4500 };
-  const rollBand = CONFIG.envelope_bands ? CONFIG.envelope_bands.roll : { lo: 700,  hi: 1800 };
+  // -- Demodulation bands — Nyquist-adaptive (ISO 13373-2:2016 §7.5) --
+  // Race band (BPFO, BPFI): covers structural resonance excited by race impacts.
+  //   Adaptive: lo = max(1500 Hz, 0.10×Nyq), hi = 0.85×Nyq.
+  //   At 12 kHz fs (CWRU): lo=1500 Hz, hi=5100 Hz → captures 6205 resonance (2–4 kHz).
+  //   At 48 kHz fs:         lo=2400 Hz, hi=20400 Hz → covers higher-fs files.
+  //   CONFIG.envelope_bands.race is the static fallback used only if fft.fs is absent.
+  // Roll band (BSF, FTF):  mid-frequency cage/ball modulation — static adequate.
+  const nyqHz = fft.fs / 2;
+  const raceAdaptLo = Math.max(1500, Math.round(0.10 * nyqHz));
+  const raceAdaptHi = Math.round(0.85 * nyqHz);
+  const raceBand = (fft.fs && raceAdaptHi > raceAdaptLo)
+    ? { lo: raceAdaptLo, hi: raceAdaptHi }
+    : (CONFIG.envelope_bands ? CONFIG.envelope_bands.race : { lo: 3000, hi: 4500 });
+  const rollBand = CONFIG.envelope_bands ? CONFIG.envelope_bands.roll : { lo: 200, hi: 1800 };
 
   // -- Global signal quality factor — ISO 13373-2:2016 §7.2 --
   // SNR > 8: strong tonal signal (factor=1.0); SNR < 2: noise-dominated (factor=0.1)
@@ -2078,6 +2091,13 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
   const maxRollBer = Math.max(bsfBer, ftfBer1);
   const maxBearingBer = Math.max(maxRaceBer, maxRollBer);
 
+  // [DEBUG — remove before final commit] BER diagnostics for CWRU re-run verification
+  // Confirm race BER rises on OR/IR files and stays ~1.0 on Normal
+  console.log('[BER-DEBUG] fs='+fft.fs+' Nyq='+nyqHz+' raceBand='+raceBand.lo+'-'+raceBand.hi+' Hz'
+    +' | bpfoHz='+bpfoHz.toFixed(1)+' bpfiHz='+bpfiHz.toFixed(1)+' bsfHz='+bsfHz.toFixed(1)
+    +' | maxRaceBer='+maxRaceBer.toFixed(3)+' bsfBer='+bsfBer.toFixed(3)
+    +' | mechCap will be '+(maxBearingBer > CONFIG.bearing_ber_threshold ? '10 (bearing present)' : '95 (no bearing)'));
+
   // Mechanical suppression cap — ISO 13379-1:2012 §5.2
   // When bearing envelope BER exceeds threshold, mechanical fault scores capped at 10%
   // Uses CONFIG value (currently 1.3) — tuned against CWRU dataset
@@ -2155,7 +2175,9 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
       const nHarm = Math.max(rule.harmonic_count, 3);
       const bsfRace = envRace ? berAvg(envRace.freqs, envRace.mags, fc, rule.bandwidth_pct, nHarm) : 0;
       const bsfRoll = envRoll ? berAvg(envRoll.freqs, envRoll.mags, fc, rule.bandwidth_pct, nHarm) : 0;
-      const rollHighBand = CONFIG.envelope_bands ? CONFIG.envelope_bands.rollHigh : { lo: 1800, hi: 5000 };
+      // rollHigh for BSF: use adaptive race band edges (same resonance region as race faults)
+      // Ball defects excite the same structural resonance as race faults — ISO 13379-1:2012 Annex A
+      const rollHighBand = raceBand;
       const envRollHigh  = computeEnvelopeFFT(rollHighBand.lo, rollHighBand.hi);
       const bsfHigh = envRollHigh ? berAvg(envRollHigh.freqs, envRollHigh.mags, fc, rule.bandwidth_pct, nHarm) : 0;
       const bsfDirect = berAvg(freqs, mags, fc, rule.bandwidth_pct, nHarm);
@@ -2248,8 +2270,34 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
     };
 
   }).sort((a, b) => {
+    // Locked faults always sink to bottom
     if (a.locked && !b.locked) return 1;
     if (!a.locked && b.locked) return -1;
+
+    // A4 ranking hierarchy — IEC 60034-14 / DECISIONS A4:
+    // Vib-derived electrical is an INDIRECT indicator; it must not outrank a direct
+    // bearing or mechanical fault present at non-trace confidence (score > 8).
+    // Priority tier: bearing > mechanical > vib-derived electrical > other.
+    // Within the same tier, higher score wins.
+    const TRACE_FLOOR = CONFIG.minimum_fault_confidence_pct || 8;
+    function rankTier(f) {
+      if (f.vibration_derived) return 3;           // lowest: indirect electrical indicator
+      if (f.category === 'bearing')    return 1;   // highest: direct bearing evidence
+      if (f.category === 'mechanical') return 2;   // direct mechanical evidence
+      return 3;                                    // other (locked already handled above)
+    }
+    const aIsVibElec = a.vibration_derived && a.pct > TRACE_FLOOR;
+    const bIsVibElec = b.vibration_derived && b.pct > TRACE_FLOOR;
+    const aHasDirect = !a.vibration_derived && a.pct > TRACE_FLOOR;
+    const bHasDirect = !b.vibration_derived && b.pct > TRACE_FLOOR;
+
+    // If one side has a direct fault above trace and the other is vib-derived electrical → direct wins
+    if (aHasDirect && bIsVibElec) return -1;
+    if (bHasDirect && aIsVibElec) return  1;
+
+    // Same tier: higher score wins
+    const tierDiff = rankTier(a) - rankTier(b);
+    if (tierDiff !== 0) return tierDiff;
     return b.pct - a.pct;
   });
 }
