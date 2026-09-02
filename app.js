@@ -1,5 +1,5 @@
 // ── VERSION (update each deploy for verification) ─────────────────────────
-const SCORER_VERSION = 'ba160b1-4'; // two-tier output: severity (confident) + fault type (honest)
+const SCORER_VERSION = 'ba160b1-5'; // two-tier fixes: card bearing-only branch + buildFallback fA language
 console.log('[LynxEyes] scorer version:', SCORER_VERSION);
 
 // ══ SUPABASE CONFIG ══════════════════════════════════════════════════════
@@ -2479,14 +2479,22 @@ function renderMgmtCard(d) {
     iconChar = '&#128308;';
     statusText = 'Action Required';
     findingText = plainFaultText(top) + ' Arrange inspection within ' + (rul < 30 ? '7' : rul < 90 ? '30' : '90') + ' days.';
-  } else if (topPct >= 20) {
-    // Developing signal — amber. Bearing or shaft-synchronous, both hedged at this level.
+  } else if (topPct >= 20 && top && !isBearingFault(top)) {
+    // Developing shaft-synchronous signal — amber. Raw FFT evidence is reliable.
     rag = 'amber';
     iconChar = '&#128993;';
     statusText = 'Monitor Closely';
-    findingText = top
-      ? plainFaultText(top) + ' Fault signal is developing. Schedule inspection at next planned maintenance window.'
-      : 'Developing signal detected. Increase monitoring frequency.';
+    findingText = plainFaultText(top) + ' Fault signal is developing. Schedule inspection at next planned maintenance window.';
+  } else if (topPct >= 20 && top && isBearingFault(top)) {
+    // Bearing-only indicative signal in Zone A/B — keep amber but softer language.
+    // Single-file envelope analysis cannot confirm bearing fault type — do not recommend inspection yet.
+    // Trending over multiple readings is required to build confidence (DECISIONS A13).
+    rag = 'amber';
+    iconChar = '&#128993;';
+    statusText = 'Monitor Closely';
+    findingText = 'Zone ' + zone + ' — ' + (zone === 'A' ? 'satisfactory' : 'acceptable') + ' vibration level.'
+      + ' Weak bearing signal noted at ' + top.name.replace('Bearing - ','') + ' frequency.'
+      + ' Indicative only — re-measure at next scheduled interval and track CF/kurtosis trend to build confidence.';
   } else if (zone === 'A' && hi >= 65) {
     // Zone A, good health, no significant signal — green
     rag = 'green';
@@ -3309,9 +3317,36 @@ function buildFallback(d){
   const allZ=getZonesForClass(selClassId);
   const zI=allZ.findIndex(z=>z.zone_label===d.zoneRow.zone_label);
   const urg=zI===allZ.length-1?'IMMEDIATE SHUTDOWN':zI===allZ.length-2?'URGENT  -  within 7 days':'PLANNED  -  within 90 days';
-  const cq=top.pct>=60?'':'indicative of ';
-  const fA=top.name.includes('Outer Race')?'Spectral signature is '+cq+'outer race bearing defect (BPFO). CF ('+d.cf+') and Kurtosis ('+d.kurt+') '+(top.pct>=60?'confirm':'suggest')+' impacting behaviour. '+top.harmonics_used+' harmonic(s) at ~'+(top.freq_hz?top.freq_hz.toFixed(1):'est.')+' Hz. Per '+top.iso_reference+'.':top.name.includes('Inner Race')?'Spectral signature is '+cq+'inner race bearing defect. Kurtosis ('+d.kurt+') provides supporting evidence. '+top.harmonics_used+' harmonic(s) matched. Per '+top.iso_reference+'.':top.name.includes('Rolling Element')?'Spectral signature is '+cq+'rolling element (ball) bearing defect. CF ('+d.cf+') and envelope analysis provide supporting evidence. '+top.harmonics_used+' harmonic(s) matched. Per '+top.iso_reference+'.':top.name.includes('Cage')?'Spectral signature is '+cq+'cage/train defect (FTF). '+top.harmonics_used+' harmonic(s) matched. Per '+top.iso_reference+'.':top.name.includes('Imbalance')?'1x shaft frequency component is '+cq+'mechanical imbalance. '+top.harmonics_used+' harmonic(s) at ~'+(top.freq_hz?top.freq_hz.toFixed(1):'est.')+' Hz. Per '+top.iso_reference+'.':top.name.includes('Misalignment')?'2x/3x harmonic content is '+cq+'shaft misalignment. '+top.harmonics_used+' harmonic(s) matched. Per '+top.iso_reference+'.':top.name.includes('Looseness')?'Multiple sub-harmonics are '+cq+'mechanical looseness. '+top.harmonics_used+' matched. Per '+top.iso_reference+'.':'Spectral signature is '+cq+top.name+'. '+top.harmonics_used+' harmonic(s) matched. Per '+top.iso_reference+'.';
-  return '## 1. Diagnostic Summary\nISO Zone '+d.zoneRow.zone_label+' ('+d.zoneRow.iso_clause_ref+'). RMS: '+d.rms+' '+d.cu+' on '+d.classRow.machine_type_desc+'.\n'+d.zoneRow.action_required+'\nDeviation: '+d.devSc+'sigma ('+d.devRow.classification+', '+d.devRow.iso_reference+').\nTrend: '+d.trendRow.code+'  -  '+d.trendRow.description+' ('+d.trendRow.iso_reference+').\n'+(d.singleFile?'\nNote: Single measurement file  -  trend direction cannot be established from one snapshot. Multiple readings required per '+d.trendRow.iso_reference+'.':'\nNote: Trend '+d.trendRow.code+' derived from '+d.historyCount+' readings ('+d.trendRow.iso_reference+').')+'\n\n## 2. Primary Fault Analysis\n*'+top.iso_reference+'*\n\n'+top.name+': Fault Indicator — '+faultIndicatorLabel(top.pct)+'.\n'+fA+(sec?'\nSecondary indicator: '+sec.name+' — '+faultIndicatorLabel(sec.pct)+' ('+sec.iso_reference+').':'')+'\n\n## 3. Recommended Actions\n**Immediate:**\n'+(zI===allZ.length-1?'* Controlled shutdown required. Do not restart without engineering authorisation. ('+d.zoneRow.iso_clause_ref+')':zI===allZ.length-2?'* Schedule maintenance within 7 days. ('+d.zoneRow.iso_clause_ref+')':'* Continue current schedule. Document per ISO 55001:2014 S7.5.')+'\n\n**Short-term:**\n* '+((top.category==='bearing'&&top.pct>=20)?'Inspect bearing. Verify lubrication per ISO 13373-1:2002 S6.2.':top.category==='bearing'?'Monitor bearing condition. Re-measure at next scheduled interval ('+mi.interval_desc+'). Track CF and Kurtosis trend (ISO 13373-2:2016 §8.2).':top.name.includes('Imbalance')?'Dynamic balance per ISO 1940-1.':top.name.includes('Misalignment')?'Precision alignment. Check soft-foot per ISO 10816-3.':top.name.includes('Looseness')?'Inspect hold-down bolts, grout and baseplate integrity.':'Continue monitoring. Re-baseline post any maintenance (ISO 13373-2:2016 S8.1).')+'\n\n**Long-term:**\n* Re-baseline post-maintenance (ISO 13373-2:2016 S8.1).\n\n## 4. Monitoring Guidance\n*'+mi.iso_reference+'*\n\nInterval: '+mi.interval_desc+'.\nMeasure H/V/A at bearing housings (ISO 13373-1:2002 S5.2). Track RMS, CF, Kurtosis.\n\n## 5. RUL & Prognostic Note\n*'+d.rulR.iso_reference+'*\n\nRUL: '+d.rulR.days+'d +/- '+d.rulR.ci+'d CI.\n'+(d.rulR.days<60?'Below 60 days  -  begin maintenance planning immediately.':'Continue trending to improve RUL accuracy.')+'\nPer '+d.rulR.iso_reference+': this estimate must not be the sole criterion for maintenance deferral. Qualified engineering review required.';
+  // DECISIONS A13 — two-tier fault analysis text
+  // Bearing faults: signal activity language only — never "defect confirmed" on single reading.
+  // Shaft-synchronous faults: confident "likely driver" language — raw FFT peak ratios are reliable.
+  const isBearingTop = isBearingFault(top);
+  const fA = top.name.includes('Outer Race')
+    ? 'Signal activity detected at outer race frequency (BPFO = ' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz), '
+      + top.harmonics_used + ' harmonic(s). INDICATIVE ONLY — single-file envelope analysis cannot confirm bearing fault type. '
+      + 'Re-measure at next interval. Track CF (' + d.cf + ') and Kurtosis (' + d.kurt + ') trend to build confidence. Per ' + top.iso_reference + '.'
+    : top.name.includes('Inner Race')
+    ? 'Signal activity detected at inner race frequency (BPFI = ' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz), '
+      + top.harmonics_used + ' harmonic(s). INDICATIVE ONLY — single-file envelope analysis cannot confirm bearing fault type. '
+      + 'Re-measure at next interval. Track CF (' + d.cf + ') and Kurtosis (' + d.kurt + ') trend to build confidence. Per ' + top.iso_reference + '.'
+    : top.name.includes('Rolling Element')
+    ? 'Signal activity detected at ball spin frequency (BSF = ' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz), '
+      + top.harmonics_used + ' harmonic(s). INDICATIVE ONLY — single-file envelope analysis cannot confirm bearing fault type. '
+      + 'Re-measure at next interval. Track CF (' + d.cf + ') and Kurtosis (' + d.kurt + ') trend to build confidence. Per ' + top.iso_reference + '.'
+    : top.name.includes('Cage')
+    ? 'Signal activity detected at cage frequency (FTF = ' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz), '
+      + top.harmonics_used + ' harmonic(s). INDICATIVE ONLY — re-measure to confirm. Per ' + top.iso_reference + '.'
+    : top.name.includes('Imbalance')
+    ? '1x shaft frequency component dominant at ~' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz, '
+      + top.harmonics_used + ' harmonic(s). Mechanical unbalance is the likely driver. Dynamic balancing recommended. Per ' + top.iso_reference + '.'
+    : top.name.includes('Misalignment')
+    ? '2x/3x shaft harmonic content elevated at ~' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz, '
+      + top.harmonics_used + ' harmonic(s). Shaft misalignment is the likely driver. Precision alignment check recommended. Per ' + top.iso_reference + '.'
+    : top.name.includes('Looseness')
+    ? 'Sub-harmonic and multiple shaft harmonics present, ' + top.harmonics_used + ' matched. '
+      + 'Mechanical looseness is the likely driver. Inspect hold-down bolts and baseplate integrity. Per ' + top.iso_reference + '.'
+    : 'Signal activity at ' + top.name + ' frequency, ' + top.harmonics_used + ' harmonic(s) matched. Per ' + top.iso_reference + '.';
+  return '## 1. Diagnostic Summary\nISO Zone '+d.zoneRow.zone_label+' ('+d.zoneRow.iso_clause_ref+'). RMS: '+d.rms+' '+d.cu+' on '+d.classRow.machine_type_desc+'.\n'+d.zoneRow.action_required+'\nDeviation: '+d.devSc+'sigma ('+d.devRow.classification+', '+d.devRow.iso_reference+').\nTrend: '+d.trendRow.code+'  -  '+d.trendRow.description+' ('+d.trendRow.iso_reference+').\n'+(d.singleFile?'\nNote: Single measurement file  -  trend direction cannot be established from one snapshot. Multiple readings required per '+d.trendRow.iso_reference+'.':'\nNote: Trend '+d.trendRow.code+' derived from '+d.historyCount+' readings ('+d.trendRow.iso_reference+').')+'\n\n## 2. Primary Fault Analysis\n*'+top.iso_reference+'*\n\n'+top.name+': Fault Indicator — '+faultIndicatorLabel(top.pct)+'.\n'+fA+(sec?'\nSecondary indicator: '+sec.name+' — '+faultIndicatorLabel(sec.pct)+' ('+sec.iso_reference+').':'')+'\n\n## 3. Recommended Actions\n**Immediate:**\n'+(zI===allZ.length-1?'* Controlled shutdown required. Do not restart without engineering authorisation. ('+d.zoneRow.iso_clause_ref+')':zI===allZ.length-2?'* Schedule maintenance within 7 days. ('+d.zoneRow.iso_clause_ref+')':'* Continue current schedule. Document per ISO 55001:2014 S7.5.')+'\n\n**Short-term:**\n* '+(top.category==='bearing'?'Bearing signal is indicative only on single reading. Re-measure at next scheduled interval ('+mi.interval_desc+'). Track CF and Kurtosis trend over multiple readings to build confidence (ISO 13373-2:2016 §8.2). Inspect only if trend confirms deterioration.':top.name.includes('Imbalance')?'Dynamic balance per ISO 1940-1.':top.name.includes('Misalignment')?'Precision alignment. Check soft-foot per ISO 10816-3.':top.name.includes('Looseness')?'Inspect hold-down bolts, grout and baseplate integrity.':'Continue monitoring. Re-baseline post any maintenance (ISO 13373-2:2016 S8.1).')+'\n\n**Long-term:**\n* Re-baseline post-maintenance (ISO 13373-2:2016 S8.1).\n\n## 4. Monitoring Guidance\n*'+mi.iso_reference+'*\n\nInterval: '+mi.interval_desc+'.\nMeasure H/V/A at bearing housings (ISO 13373-1:2002 S5.2). Track RMS, CF, Kurtosis.\n\n## 5. RUL & Prognostic Note\n*'+d.rulR.iso_reference+'*\n\nRUL: '+d.rulR.days+'d +/- '+d.rulR.ci+'d CI.\n'+(d.rulR.days<60?'Below 60 days  -  begin maintenance planning immediately.':'Continue trending to improve RUL accuracy.')+'\nPer '+d.rulR.iso_reference+': this estimate must not be the sole criterion for maintenance deferral. Qualified engineering review required.';
 }
 
 // == MARKDOWN RENDERER ==
