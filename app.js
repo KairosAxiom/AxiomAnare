@@ -1833,14 +1833,15 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
 
   // -- Demodulation bands — Nyquist-adaptive (ISO 13373-2:2016 §7.5) --
   // Race band (BPFO, BPFI): covers structural resonance excited by race impacts.
-  //   Adaptive: lo = max(1500 Hz, 0.10×Nyq), hi = 0.85×Nyq.
-  //   At 12 kHz fs (CWRU): lo=1500 Hz, hi=5100 Hz → captures 6205 resonance (2–4 kHz).
-  //   At 48 kHz fs:         lo=2400 Hz, hi=20400 Hz → covers higher-fs files.
+  //   Adaptive: lo = max(1000 Hz, 0.20×Nyq), hi = 0.65×Nyq.
+  //   Narrower than earlier attempt (0.10–0.85) — tighter bandpass gives better SNR.
+  //   At 12 kHz fs (CWRU): lo=1200 Hz, hi=3900 Hz → centred on 6205 resonance (2–4 kHz).
+  //   At 48 kHz fs:         lo=4800 Hz, hi=15600 Hz → covers higher-fs resonance region.
   //   CONFIG.envelope_bands.race is the static fallback used only if fft.fs is absent.
   // Roll band (BSF, FTF):  mid-frequency cage/ball modulation — static adequate.
   const nyqHz = fft.fs / 2;
-  const raceAdaptLo = Math.max(1500, Math.round(0.10 * nyqHz));
-  const raceAdaptHi = Math.round(0.85 * nyqHz);
+  const raceAdaptLo = Math.max(1000, Math.round(0.20 * nyqHz));
+  const raceAdaptHi = Math.round(0.65 * nyqHz);
   const raceBand = (fft.fs && raceAdaptHi > raceAdaptLo)
     ? { lo: raceAdaptLo, hi: raceAdaptHi }
     : (CONFIG.envelope_bands ? CONFIG.envelope_bands.race : { lo: 3000, hi: 4500 });
@@ -2093,9 +2094,14 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
 
   // [DEBUG — remove before final commit] BER diagnostics for CWRU re-run verification
   // Confirm race BER rises on OR/IR files and stays ~1.0 on Normal
+  const _bpfoEnvBer = envRace ? berAvg(envRace.freqs, envRace.mags, bpfoHz, 0.15, 3) : 0;
+  const _bpfoDirectBer = berAvg(freqs, mags, bpfoHz, 0.15, 3);
+  const _bpfiEnvBer = envRace ? berAvg(envRace.freqs, envRace.mags, bpfiHz, 0.15, 3) : 0;
+  const _bpfiDirectBer = berAvg(freqs, mags, bpfiHz, 0.15, 3);
   console.log('[BER-DEBUG] fs='+fft.fs+' Nyq='+nyqHz+' raceBand='+raceBand.lo+'-'+raceBand.hi+' Hz'
-    +' | bpfoHz='+bpfoHz.toFixed(1)+' bpfiHz='+bpfiHz.toFixed(1)+' bsfHz='+bsfHz.toFixed(1)
-    +' | maxRaceBer='+maxRaceBer.toFixed(3)+' bsfBer='+bsfBer.toFixed(3)
+    +' | bpfoHz='+bpfoHz.toFixed(1)+' bpfiHz='+bpfiHz.toFixed(1)
+    +' | BPFO env='+_bpfoEnvBer.toFixed(3)+' direct='+_bpfoDirectBer.toFixed(3)+' eff='+Math.max(_bpfoEnvBer,_bpfoDirectBer*0.7).toFixed(3)
+    +' | BPFI env='+_bpfiEnvBer.toFixed(3)+' direct='+_bpfiDirectBer.toFixed(3)+' eff='+Math.max(_bpfiEnvBer,_bpfiDirectBer*0.7).toFixed(3)
     +' | mechCap will be '+(maxBearingBer > CONFIG.bearing_ber_threshold ? '10 (bearing present)' : '95 (no bearing)'));
 
   // Mechanical suppression cap — ISO 13379-1:2012 §5.2
@@ -2145,24 +2151,31 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
     // ISO 13379-1:2012 Annex A §A.3 — race band envelope BER
     // Load zone boost: BPFO ± shaft sidebands when OR in load zone
     if (rule.rule_id === 'r_bpfo') {
+      // Dual-path: envelope BER (primary) + direct raw FFT BER (fallback ×0.7).
+      // When envelope SNR is poor, direct FFT path provides second detection route.
+      // Same pattern as BSF bsfDirect — ISO 13379-1:2012 Annex A §A.3
       const eArr = envRace;
       const eBer = eArr ? berAvg(eArr.freqs, eArr.mags, fc, rule.bandwidth_pct, rule.harmonic_count) : 0;
+      const directBer = berAvg(freqs, mags, fc, rule.bandwidth_pct, rule.harmonic_count);
+      const effectiveBer = Math.max(eBer, directBer * 0.7);
       h2 = rule.harmonic_count;
-      sc = berToScore(eBer, rule.confidence_weight);
+      sc = berToScore(effectiveBer, rule.confidence_weight);
       sc += Math.round((cfB + kB) * rule.confidence_weight * snrFactor);
       // Load zone shaft modulation — ISO 13379-1:2012 §A.3
-      if ((loadZone === 'centered' || loadZone === 'orthogonal') && eBer > 1.3 && eArr) {
+      if ((loadZone === 'centered' || loadZone === 'orthogonal') && effectiveBer > 1.3 && eArr) {
         const sb = sidebandCount(eArr.freqs, eArr.mags, fc, shaft, rule.bandwidth_pct, 2);
         if (sb >= 2) sc = Math.round(sc * 1.3);
       }
 
     // ── BEARING — INNER RACE (BPFI) ───────────────────────────────────────
-    // ISO 13379-1:2012 Annex A §A.3 — race band envelope BER
+    // ISO 13379-1:2012 Annex A §A.3 — race band envelope BER + direct FFT fallback
     } else if (rule.rule_id === 'r_bpfi') {
       const eArr = envRace;
       const eBer = eArr ? berAvg(eArr.freqs, eArr.mags, fc, rule.bandwidth_pct, rule.harmonic_count) : 0;
+      const directBer = berAvg(freqs, mags, fc, rule.bandwidth_pct, rule.harmonic_count);
+      const effectiveBer = Math.max(eBer, directBer * 0.7);
       h2 = rule.harmonic_count;
-      sc = berToScore(eBer, rule.confidence_weight);
+      sc = berToScore(effectiveBer, rule.confidence_weight);
       sc += Math.round((cfB + kB) * rule.confidence_weight * snrFactor);
 
     // ── BEARING — ROLLING ELEMENT (BSF) ──────────────────────────────────
