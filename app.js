@@ -1,5 +1,5 @@
 // ── VERSION (update each deploy for verification) ─────────────────────────
-const SCORER_VERSION = 'ba160b1-5'; // two-tier fixes: card bearing-only branch + buildFallback fA language
+const SCORER_VERSION = 'ba160b1-6'; // BER-DEBUG logging removed (no scoring change vs ba160b1-5)
 console.log('[LynxEyes] scorer version:', SCORER_VERSION);
 
 // ══ SUPABASE CONFIG ══════════════════════════════════════════════════════
@@ -2101,13 +2101,6 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
   const ftfBer1 = envRoll ? ber(envRoll.freqs, envRoll.mags, ftfHz, 0.20, 3) : 0;
   const maxRollBer = Math.max(bsfBer, ftfBer1);
   const maxBearingBer = Math.max(maxRaceBer, maxRollBer);
-
-  // [DEBUG — remove before final commit] BER diagnostics for CWRU re-run verification
-  console.log('[BER-DEBUG] fs='+fft.fs+' raceBand='+raceBand.lo+'-'+raceBand.hi+' Hz'
-    +' | BPFO env='+bpfoEnvBer.toFixed(3)+' direct='+bpfoDirectBer.toFixed(3)+' eff='+Math.max(bpfoEnvBer,bpfoDirectBer).toFixed(3)
-    +' | BPFI env='+bpfiEnvBer.toFixed(3)+' direct='+bpfiDirectBer.toFixed(3)+' eff='+Math.max(bpfiEnvBer,bpfiDirectBer).toFixed(3)
-    +' | maxRaceBer='+maxRaceBer.toFixed(3)
-    +' | mechCap='+(maxBearingBer > CONFIG.bearing_ber_threshold ? '10 (bearing)' : '95 (none)'));
 
   // Mechanical suppression cap — ISO 13379-1:2012 §5.2
   // When bearing envelope BER exceeds threshold, mechanical fault scores capped at 10%
