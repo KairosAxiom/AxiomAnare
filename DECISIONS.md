@@ -18,6 +18,11 @@ fixed in CONFIG (see Part B, "ISO ringfence integrity audit"). Still to verify: 
 13373-2, 13381-1, 55001 and IEC 60034-14 — all still carry the suspect `Sx.x` notation and have NOT been
 checked against their real clause structure. Same option-(a) method when done (cite only to the verifiable
 level — annex/clause — never an invented decimal).
+⚠️ OPEN (added 3 Sep 2026): **ISO edition check.** The zone table was verified against ISO 10816-3:2009(E),
+but ISO 20816-3:2022 has since replaced 10816-3 and its zone boundaries / group definitions were revised.
+Decide whether LynxEyes stays on the 2009 edition (acceptable, but must be labelled as such in the UI and
+report) or migrates CONFIG to 20816-3 values — a migration changes classification output → CWRU re-run
+(A6). Surfaced by the MechEyes/Gemini transcript review (Part B, 3 Sep 2026), which cited 20816-3.
 
 ### A2. Confidence drives language (enforced in prompt)
 Below ~40% confidence → indicative language only. Display floor `minimum_fault_confidence_pct: 8`;
@@ -127,10 +132,79 @@ by any standard. They're reasonable (20× shaft speed captures a healthy harmoni
 labelled as a house threshold wherever surfaced, never cited as if ISO prescribes them (per A1's spirit:
 house constants and standard-derived constants must not be conflated).
 
+**UI pattern for step 2 (added 3 Sep 2026):** when prompting, show what WAS detected alongside what is
+missing, e.g. "Detected 40,960 samples at 10 kHz. Enter the motor's nominal RPM to enable fault-frequency
+mapping." Stating the detected values (a) proves the file was read, (b) lets the user sanity-check the
+auto-detection at the same moment, and (c) keeps the free-tier flow moving with one field rather than a
+form. Borrowed from the MechEyes transcript review (Part B, 3 Sep 2026).
+
 **Status: not yet implemented.** Related open UI bug (separate from this guardrail, but plausibly
 downstream of it): the fault classification panel has shown electrical fault categories as primary while
 locking mechanical categories, inconsistent with the banner text — worth re-checking once A12 lands,
 since unflagged assumed inputs may be contributing to that misclassification.
+
+### A13. Two-tier output model — severity always confident, fault type honest (formalised 2 Sep 2026)
+> ⚠️ **This copy of DECISIONS.md did not contain A13** although CONTEXT.md (2 Sep 2026) and the session log
+> both cite it as formalised here. The text below is reconstructed from CONTEXT.md on 3 Sep 2026 so the
+> reference doesn't dangle (see Part C, "A guardrail referenced before it's written"). If a 2 Sep copy with
+> the original A13 wording exists, that wording wins — reconcile and delete this note.
+
+**Tier 1 — Severity (always confident):** ISO zone from RMS velocity vs the CONFIG zone boundaries. Zone
+C/D drives urgency and required action unconditionally. Never hedged — it is an objective measurement
+against a published standard boundary.
+**Tier 2 — Fault type (honest confidence):**
+- Shaft-synchronous faults (unbalance, misalignment, looseness): detected from raw FFT peak ratios; stated
+  as "likely driver" when confidence ≥ 20%. Reliable from a single file.
+- Bearing faults (BPFO, BPFI, BSF, FTF): detected via dual-path envelope BER + direct FFT BER; stated as
+  "indicative only" ALWAYS on a single reading. Single-file analysis cannot confirm bearing fault type
+  without sensor-housing resonance knowledge (which hardware analysers have and raw uploads do not).
+  Confident identification requires trend over multiple readings (CF + kurtosis rising over time).
+**Single-reading caveat:** Zone C/D from a single file with no trend history appends "Re-measure to confirm
+before shutdown decision" — the severity is real, but one reading cannot rule out transients.
+**CWRU acceptance bar (Smith & Randall–based):** Normal → Zone A/B, no confident fault; IR_007 / OR_007 /
+OR_021 → correct bearing category elevated with indicative language; Ball_007 → hedge is correct (ball
+faults are the hardest category). The old "5/5 confident identification" bar is RETIRED — it pushed toward
+over-diagnosis, violating A2/A3.
+
+### A14. Fault-frequency multipliers anchor to the MEASURED 1×, not nameplate RPM (formalised 3 Sep 2026, not yet built)
+Nameplate RPM is the starting point, never the anchor. Motors run below synchronous speed under load
+(a "1500 RPM" motor may run 1475 loaded, 1492 idling); if 2×/3× harmonics and BPFO/BPFI/BSF/FTF markers
+are computed from nameplate, the bearing markers drift out of their search windows and the scorer misses
+or mis-bins them.
+**Required behaviour once built:**
+1. Search for the dominant peak inside a NARROW window around the nameplate-derived shaft frequency
+   (CONFIG constant — proposed ±5% for direct-drive; for induction motors the window can be tighter,
+   bounded by synchronous speed above and full-load slip below). NEVER "take the highest peak in the
+   low-frequency spectrum" — that is frequently 2×line, blade-pass or gearmesh, not 1×.
+2. If a peak is found in the window, use it as the measured 1× and derive every multiplier from it.
+   Surface it: "Measured running speed 1476 RPM (nameplate 1500)."
+3. If no clear peak is found (flat window, or peak below a CONFIG prominence threshold), fall back to
+   nameplate AND flag it under the A12 assumptions note ("running speed not detected — fault frequencies
+   derived from nameplate RPM").
+4. Measured-vs-nameplate deviation beyond a CONFIG bound (proposed >5%) is itself a data-quality flag
+   (A10) — either the nameplate RPM is wrong or the wrong peak was picked.
+**Status: not yet implemented.** Small scorer change; belongs with Phase 1.5 accuracy work. CWRU re-run
+required after (A6). Origin: MechEyes/Gemini transcript review, Part B, 3 Sep 2026.
+
+### A15. Spectral-resolution guard — window in BINS, warn on coarse Δf (formalised 3 Sep 2026, not yet built)
+Frequency resolution Δf = fs / N (N = FFT/segment length) determines whether the engine can see what it
+claims to look for. Peak-search windows expressed in fixed Hz can contain ZERO bins when Δf is coarse
+(e.g. a ±1 Hz window with Δf = 2.44 Hz — the exact failure that made the MechEyes reference code miss a
+pure 50 Hz sine). Sideband detection (slip sidebands at ±2·s·f_line, bearing modulation) needs Δf well
+below the sideband spacing.
+**Required behaviour once built:**
+1. Compute and store Δf for every analysis; expose it in the assumptions/quality note.
+2. All peak-search and band-energy windows are sized in bins (minimum 1 bin either side), derived from
+   the Hz tolerance in CONFIG — never a raw Hz range that can round to nothing.
+3. Record-length check: capture must contain ≥ CONFIG minimum shaft revolutions (house heuristic,
+   proposed 20) for the 1× estimate and harmonic ratios to be trusted; fewer → A10 data-quality
+   downgrade, not a silent result.
+4. If Δf is too coarse for a given check (CONFIG threshold per check — proposed 0.5 Hz for sideband
+   logic), that check is reported as "not resolvable at this record length", NOT run and reported
+   as "absent". Absence of evidence must never be manufactured by resolution.
+These are LynxEyes house thresholds, not ISO-prescribed — label accordingly per A1/A12.
+**Status: not yet implemented.** Feeds the Phase 1.5 "odd sample rates / robustness" item. Origin:
+MechEyes/Gemini transcript review, Part B, 3 Sep 2026.
 
 ---
 
@@ -303,6 +377,29 @@ discipline as the 20 Jul rebrand:
   keys, `axiomPrint()`, filenames `axiomanare_*`. The product≠repo naming mismatch is still intentional —
   now product = **LynxEyes** (plural), repo/folders = AxiomAnare.
 
+### Why the MechEyes (Gemini) transcript was reviewed, and what was borrowed vs rejected (3 Sep 2026)
+David ran a parallel design conversation with Gemini — steering it toward the same problem LynxEyes
+solves — and saved the transcript as `MechEyes.md`, to test whether an independent route reached anything
+LynxEyes lacks. Same discipline as the 19 Jun third-party spec review: dig for ideas, adopt only what
+survives comparison with the live engine, log the rejects so they don't get reinvented.
+
+**Verdict:** the transcript is a competent textbook outline of the standard vibration-diagnostic
+approach (normalise → features → physics rules → ML), which independently confirms LynxEyes' architecture
+is the conventional one. Its reference implementation, however, fails its own synthetic test (a clean
+50 Hz sine at 3000 RPM produced "Electrical_Anomaly: 75%" and NO 1× detection) and has structural gaps
+LynxEyes already closed: no units/integration path to ISO velocity, single-channel schema, no envelope
+analysis, bearing rule with no frequency check, and pseudo-percentage confidences — the precise
+over-diagnosis A13 retired. Nothing in it competes with what is live.
+
+**Borrowed (→ Part A):**
+1. Measured-1× anchoring for fault multipliers → **A14**.
+2. Spectral-resolution guard (bins not Hz, Δf and record-length checks) → **A15**.
+3. "Show detected, ask for missing" prompt pattern → **A12 addendum**.
+4. ISO 20816-3 vs 10816-3 edition question → **A1 open item**.
+**Parked (→ Part C, deferred):** MCSA current-channel cross-validation; UFF/UNV (Type 58) import.
+**Rejected (→ Part C, rejected patterns):** energy-ratio unbalance rule, kurtosis-only bearing rule,
+arbitrary confidence arithmetic, flat JSON rule schema, early ML with SMOTE on CWRU.
+
 ### [ADD future decisions here — date, what, why]
 
 ---
@@ -359,8 +456,53 @@ references that document again:
   (`is_admin` or not). Noted as a *possible* future pattern if Fleet customers want sub-roles within
   their own org, but NOT to be built speculatively — consistent with the project's tight scope control.
 
+### Patterns explicitly REJECTED from the MechEyes/Gemini transcript review (3 Sep 2026)
+Reviewed and consciously NOT adopted — see Part B (3 Sep 2026) for the review itself:
+- **Unbalance as a FRACTION of total spectral energy** (`ratio_1x > 0.40`). Every healthy rotating machine
+  has a dominant 1×, so this flags healthy motors and misses unbalance on machines with busy spectra.
+  LynxEyes judges 1× by absolute velocity amplitude against ISO zone boundaries + peak ratios. Keep it that way.
+- **Bearing fault = kurtosis > 4 AND crest factor > 5, with no frequency check.** That is an impact
+  detector (looseness, cavitation, a dropped tool), not a bearing detector. LynxEyes' envelope BER + direct
+  BER path is the correct method; never regress to statistics-only bearing calls. (Also note: the
+  transcript mixed Fisher/excess kurtosis in code with Pearson thresholds in prose — an easy silent bug.
+  LynxEyes' kurtosis convention must be stated once in CONFIG and used consistently.)
+- **Confidence as arithmetic on a single metric** (`ratio_1x × 100`, `kurtosis × 15`, flat `75.0`).
+  Uncalibrated numbers presented as percentages — exactly the over-diagnosis A2/A3/A13 exist to prevent.
+- **Line-frequency energy check with a ±2 Hz window** as an electrical-fault rule. On a 2-pole motor the
+  mechanical 1× sits inside that window (slip only), so it fires on every healthy machine. A4's cap on
+  vib-derived electrical findings stands; proper electrical confirmation needs slip sidebands at Δf well
+  below sideband spacing (A15) or a current channel (parked below).
+- **Flat JSON rule schema** (primary_metric / operator / threshold + AND-list). Cannot express harmonic
+  ratios, sideband presence, band energies or the axial-vs-radial decision trees the scorer already
+  implements. LynxEyes' CONFIG-as-data + scorer logic is more expressive; don't replace it with a
+  less capable DSL for the sake of "editable without code".
+- **Early ML (gradient boosters / SMOTE trained on CWRU).** CWRU-trained classifiers are known not to
+  transfer to field machines (small, clean, leakage across loads), and SMOTE fabricates physically
+  implausible feature vectors. LynxEyes' sequencing — ML in Phase 4, behind real trend data, validated
+  leave-one-machine-out — is the right order. Do not pull it forward on the strength of benchmark accuracy.
+- **Vendor-agnostic via a Python/Streamlit rebuild.** The transcript's stack is irrelevant; LynxEyes'
+  agnosticParser2.js already covers CSV/MAT/XLSX/JSON/TSV/TXT. Format coverage is extended in the
+  existing parser, not by adopting a second pipeline.
+
 ### Deferred, not forgotten (open items with an explicit "not now")
 - **Emoji cleanup in the UI** (17 instances found 6 Jul 2026) — violates the documented "no emojis in
   diagnostic output" standard. David explicitly asked to leave these until after current heavy-lift work
   is done, then do a housekeeping pass. This is a deliberate sequencing decision, not an oversight — do
   not "helpfully" fix it early, and do not let it silently drop off the list either.
+- **MCSA current-channel cross-validation** (parked 3 Sep 2026). The transcript is right that motor
+  current signature analysis is the proper way to CONFIRM electrical faults (broken rotor bars, eccentricity,
+  stator faults) that vibration can only hint at. LynxEyes' electrical findings are vibration-derived and
+  capped below Indicative (A4) — that is the honest position for a vibration-only tool. Adding a current
+  channel is a scope expansion (parser, schema, new scorer branch, new KB material), not a bug fix.
+  Revisit if Fleet customers supply synchronised current + vibration data. Not before Phase 3.
+- **UFF / UNV (Universal File Format, Type 58) import** (parked 3 Sep 2026). Standard ASCII interchange
+  format exported by Bently Nevada, SKF and similar platforms. Not in agnosticParser2.js. Whether it
+  matters depends on whether target users export from enterprise systems or from portable collectors/
+  loggers (which mostly emit CSV). Decide from real user file samples during Phase 1.5/3 — do not build
+  speculatively.
+- **BPFI misfiring on CWRU Ball_007** (known limitation, logged 2 Sep 2026; noted here 3 Sep 2026 because
+  this copy of DECISIONS.md did not carry it). The direct-FFT BER path elevates BPFI as top fault on a
+  ball-fault file. Ball faults are the hardest category (Smith & Randall) and the two-tier language (A13)
+  already hedges it as "indicative only", so this is a known-and-caveated miss, not a two-tier language
+  problem. Candidate fixes when revisited: minimum harmonic count for BPFI direct, or reduced BPFI direct
+  weight. Low priority.

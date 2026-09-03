@@ -1,11 +1,9 @@
 # LynxEyes — Living Project Context
-Last updated: 31 Aug 2026
-Latest code commit: 5aa2904 (KB reference chunks, repo-only — embed deferred).
-  Prior functional commit: 411a618 (multiChannel parse-once freeze fix).
-  NOTE: diagnostic/scoring path UNCHANGED this session — CWRU bearing-scorer bug
-  confirmed but NOT yet fixed. See Session Log 31 Aug + "Next session".
-Earlier uncommitted 6 Jul index.html UI work (cream theme + KPI strip) is now
-superseded by / folded into the committed index.html; see Session Log below.
+Last updated: 2 Sep 2026
+Latest code commit: bac213c (bearing-only card branch + buildFallback two-tier language).
+  Scorer arc commits this session: 8570d6a → ba160b1 → d2cc7bd → bac213c.
+  Debug logging (BER-DEBUG console.log) still live in app.js — remove before embed pass.
+  KB chunks committed 5aa2904 (repo-only), embed still deferred — see Next session.
 Company: Kairos Ventures Pte Ltd
 
 ---
@@ -94,22 +92,15 @@ project or a fresh instructions field:
 `--accent`, `--accent2`, `--green`, `--yellow`, `--orange`, `--red`,
 `--purple`, `--text`, `--muted`, `--dim`
 
-**Current palette: cream/light theme** (converted from dark navy 6 Jul 2026
-— see Session Log). Example values: `--bg:#faf8f3`, `--surface:#ffffff`,
-`--text:#1c1f26`, `--accent:#1f6fb2`. Full values live in index.html.
+**Current palette: cream/light theme** (converted from dark navy 6 Jul 2026).
+Example values: `--bg:#faf8f3`, `--surface:#ffffff`, `--text:#1c1f26`,
+`--accent:#1f6fb2`. Full values live in index.html.
 
 **Known governance gap (open, not yet remediated):** many colors in
 index.html are hardcoded hex/rgba literals that do NOT reference the
-`:root` variables — found during the 6 Jul conversion (43 hex + 71 rgba
-literal instances outside the print stylesheet, several of them
-near-duplicate colors of the actual variables, e.g. three different
-"greens" were in simultaneous use). These were value-converted in place
-during the 6 Jul light-theme pass so the visual result is coherent, but
-they still aren't wired to `var()` — a future edit to `--green` etc. will
-NOT automatically update them. A proper pass to replace these literals with
-actual `var()` references is real cleanup debt, not done yet. Do not
-introduce new hardcoded color literals going forward — always reuse the
-variables.
+`:root` variables. A proper pass to replace these literals with actual
+`var()` references is real cleanup debt, not done yet. Do not introduce
+new hardcoded color literals going forward — always reuse the variables.
 
 ---
 
@@ -122,26 +113,53 @@ variables.
 - Never remove existing functionality — extend only.
 - All Supabase queries must respect RLS policies (see RLS section below).
 - Shared logic goes in separate .js files, not duplicated per page.
-- Maintain consistency across index.html, fleet.html, admin.html, and any
-  new pages.
+- Maintain consistency across index.html, fleet.html, admin.html, and any new pages.
 - Keep the engineering credibility of the product — no casual language in
   the UI. **No emojis in diagnostic output is the stated standard, but it
   is currently NOT enforced** — 17 emoji character entities are live in
-  index.html (mgmt-icon, early-warning banner, buttons, etc.), confirmed by
-  audit 6 Jul 2026. David has explicitly deferred cleanup until after the
-  current heavy-lift work is done — this is a known, intentional exception,
-  not an oversight. Do not silently "fix" it before then; do not forget it
-  either — see Not Started.
+  index.html. David has explicitly deferred cleanup until after current
+  heavy-lift work. Do not silently fix it or forget it — see Not Started.
 - Respect the caveat, everywhere: AI output requires qualified engineer
   review and sign-off. It is a draft, not a certified determination.
 - Update this file with decisions made in each chat; re-upload to Project
   Knowledge and commit to repo as a discrete closing step.
-- Validate migrations in a sandbox Postgres instance before running on
-  production.
-- Verification-driven: want actual evidence (logs, query results,
-  screenshots) before marking anything complete.
+- Validate migrations in a sandbox Postgres instance before running on production.
+- Verification-driven: want actual evidence (logs, query results, screenshots)
+  before marking anything complete.
 - Tight scope control: park out-of-scope ideas explicitly (see DECISIONS.md
-  PART C for the rejected-patterns log) rather than building speculatively.
+  PART C) rather than building speculatively.
+
+---
+
+## Diagnostic Engine — Two-Tier Output Model (DECISIONS A13, formalised 2 Sep 2026)
+
+**Tier 1 — Severity (always confident):**
+ISO zone from RMS velocity vs ISO 10816-3 boundaries. Zone D/C drives urgency
+and required action unconditionally. Never hedged — it is an objective
+measurement against a published standard boundary.
+
+**Tier 2 — Fault type (honest confidence):**
+- Shaft-synchronous faults (unbalance, misalignment, looseness): detected from
+  raw FFT peak ratios. Stated as "likely driver" when confidence ≥ 20%.
+  Reliable from a single file.
+- Bearing faults (BPFO, BPFI, BSF, FTF): detected via dual-path envelope BER
+  + direct FFT BER. Stated as "indicative only" always on a single reading.
+  Single-file analysis cannot confirm bearing fault type without resonance
+  frequency knowledge. Confident identification requires trend over multiple
+  readings (CF + kurtosis rising over time).
+
+**Single-reading caveat:** Zone C/D from a single file without trend history
+appends "Re-measure to confirm before shutdown decision" — severity is real,
+one reading cannot rule out transients.
+
+**CWRU benchmark acceptance bar (Smith & Randall–based, formalised 2 Sep 2026):**
+- Normal: Zone A/B, no confident fault. ✓
+- IR_007 / OR_007 / OR_021: correct bearing category elevated, indicative language. ✓
+- Ball_007: indicative/hedge is acceptable and correct per S&R (ball faults are
+  the hardest category; BPFI misfiring on Ball_007 is a known limitation — see
+  DECISIONS Part C).
+The old "5/5 confident identification" bar is explicitly retired — it pushed
+toward over-diagnosis, violating A2/A3.
 
 ---
 
@@ -160,18 +178,10 @@ fault_signatures, knowledge_chunks, nvr_records, organisations,
 profiles, subscription_events, usage_log
 
 ### SCHEMA DRIFT — IMPORTANT
-The committed schema file (axiomanare_schema.sql) and the live DB have
-diverged.
-- Schema file defines 8 tables: organisations, assets, baselines, nvr_records,
-  fault_detections, fault_signatures, zone_progressions, bearing_library.
-- The 6 "sprint" tables (profiles, asset_twins, case_library, knowledge_chunks,
-  usage_log, subscription_events) were created by an UNCOMMITTED migration
-  (the 13 Apr "schema.sql utility script") — they exist in prod but are NOT
-  in the committed schema file.
-- fault_detections and zone_progressions are in the schema FILE but were
-  NEVER created in prod. The live DB does not have them.
-- Net live state = 6 from schema file (no fault_detections/zone_progressions)
-  + 6 from the uncommitted migration = 12 tables.
+The committed schema file (axiomanare_schema.sql) and the live DB have diverged.
+See prior session logs for full detail. Net live state = 12 tables.
+fault_detections and zone_progressions are in the schema FILE but were NEVER
+created in prod.
 
 ### profiles columns (confirmed 22 May)
 id (uuid PK), org_id (uuid), tier (tier_name enum),
@@ -180,49 +190,13 @@ stripe_sub_id (text), paypal_sub_id (text), asset_addon_count (int),
 analyses_used (int), billing_interval (text), created_at, updated_at,
 is_admin (boolean — ADDED 22 May by RLS migration)
 
-### nvr_records columns (confirmed via 13 Apr migration)
-feature_vector (jsonb), user_confirmed (boolean), confirmed_fault,
-twin_deviation — plus base columns from the schema file. See DECISIONS
-A10/A12 for planned/proposed additions not yet run on prod.
-
 ---
 
 ## RLS — ROW LEVEL SECURITY (hardened 22 May, verified on prod)
-### Tenancy model
-- Individual AND org based. An individual account = an org of one.
-- Every profile points at an org_id. Customer data is org-scoped.
-- An admin (profiles.is_admin = true) sees and manages everything.
-
-### What rls_foundation_v2.sql installed (run on prod 22 May, success)
-- Added profiles.is_admin boolean default false.
-- Two SECURITY DEFINER helpers (SET search_path = public, granted to anon +
-  authenticated + service_role): current_org_id(), is_admin().
-- Column-guard trigger on profiles BEFORE UPDATE: blocks non-admin /
-  non-service_role changes to tier, is_admin, org_id.
-- Dropped all legacy open policies; installed org-scoped + admin policies.
-- Migration is table-existence-aware — skips fault_detections /
-  zone_progressions cleanly.
-- WIPED pre-RLS test data (Option A): TRUNCATEd assets/baselines/nvr_records.
-
-### Access summary
-- profiles: own row or admin (privileged cols guarded by trigger).
-- organisations: members read; member/admin update; authenticated insert;
-  admin delete.
-- assets / baselines / nvr_records: org-scoped or admin.
-- fault_signatures / zone_progressions (cumulative silo, anonymised, shared
-  cross-customer by design): authenticated insert + read; admin all.
-- bearing_library: ANON READ preserved (free diagnostic needs it); admin write.
-- asset_twins / case_library / knowledge_chunks / usage_log /
-  subscription_events: admin-only (features not built yet).
-
-### First admin bootstrapped
-- davidlimyk@gmail.com → is_admin = true. Console (postgres role) does NOT
-  bypass the column-guard trigger — bootstrap required temporarily disabling
-  it. org_id likely NULL (created via Subscribe path) — fine for an admin.
-
-### handle_new_user trigger — CONFIRMED working
-Signup creates an auth.users row AND auto-creates a profiles row (tier=free,
-is_admin=false).
+See prior session logs for full detail. Status: CLOSED and org-scoped.
+rls_foundation_v2.sql applied to prod. All customer data is org-scoped.
+bearing_library keeps anon SELECT (free diagnostic needs it).
+First admin bootstrapped: davidlimyk@gmail.com.
 
 ---
 
@@ -235,112 +209,59 @@ is_admin=false).
 | Fleet Pro     | $299/mo | Unlimited | 30     | ✓         | ✓     |
 | Asset add-on  | $25/mo  | —         | +1     | ✓         | ✓     |
 
-Prices are hardcoded in the auth.js Subscribe modal — Stripe products must
-match exactly once live. No upload caps on any paid tier; gate on assets
-only. AI report is the primary freemium gate. Priced below expense claim
-threshold — engineer pays own card. Replaces $200–$1,600/asset desk analysis
-time, not the site visit. Engineer reviews + signs off all output; AI report
-is a draft, not a certified determination.
-
----
-
-## FREEMIUM GATE — Implementation Detail
-```
-FREE_ANALYSIS_LIMIT = 5 (app.js)
-Free tier = anonymous, CLIENT-SIDE (localStorage counter). No Supabase
-account, no profiles row. "Free to Try" is NOT a signup.
-
-Freemium.isPro() → reads localStorage.ax_tier; any value other than 'free'
-returns true; ax_pro legacy fallback if ax_tier absent.
-
-Freemium.syncTier() [async] → called 200ms after auth.js loads →
-window.Auth.getTier() → Supabase profiles.tier → caches ax_tier.
-
-Auth.getTier() returns profile?.tier || 'free' → one of
-'pro' | 'fleet_starter' | 'fleet_pro' | 'free' (never null)
-```
-
-### FLEET GATING — fleet.html (behind feature flag)
-```
-const FLEET_GATING_ENABLED = false   (fleet.html ~line 726)
-  → DEFAULT OFF for stress testing. Flip to TRUE before launch.
-
-fleet.html uses its OWN self-contained auth (raw fetch, localStorage.
-ax_session) — no supabase-js session. Auth.getTier() would floor every
-fleet user to 'free'. Fleet gating uses its own getUserTier() instead
-(bearer-token sbGet on profiles).
-
-OUT OF SCOPE (still open): asset-count enforcement (10/30), "upgrade an
-existing logged-in user" Stripe flow.
-```
-
----
-
-## Payments
-- Stripe: primary (account exists, keys TBC)
-- PayPal: secondary (deferred until Stripe live)
-- Products to create in Stripe: Pro, Fleet Starter, Fleet Pro, Asset Add-on
-
-### Cloudflare Worker secrets required (dashboard → Settings → Variables)
-STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_PRO,
-STRIPE_PRICE_FLEET_STARTER, STRIPE_PRICE_FLEET_PRO
-
-### Stripe webhook endpoint
-URL: https://restless-tree-eac8.kairosventure-io.workers.dev/stripe-webhook
-Events: checkout.session.completed, customer.subscription.deleted
+FLEET_GATING_ENABLED = false in fleet.html — flip to true before launch.
 
 ---
 
 ## Cloudflare Worker — restless-tree-eac8
-Dashboard-managed — no wrangler.toml, no CLI deploy, edited in CF dashboard.
-| Route | Purpose |
-|---|---|
-| POST /v1/messages | Claude API proxy (streaming) |
-| POST /embed | Voyage AI embeddings |
-| POST /rag | Supabase match_knowledge_chunks |
-| POST /create-checkout-session, /stripe-webhook | Stripe |
-| CRON "0 9 */3 * *" | Supabase keep-alive ping |
+Dashboard-managed — no wrangler.toml, no CLI deploy.
 Secrets bound: ANTHROPIC_API_KEY, SUPABASE_SERVICE_KEY, SUPABASE_URL,
 VOYAGE_API_KEY (Stripe secrets still TODO).
+CRON "0 9 */3 * *" — keep-alive ping VERIFIED firing.
 
 ### RAG Pipeline (live)
-```
 PDF/MD → chunk → embed (voyage-3, 1024-dim) → knowledge_chunks (pgvector)
-→ at analysis: semantic query from NVR context → /embed → /rag → top-5
-  chunks (0.30 similarity floor) → injected into Claude system prompt
-```
+→ at analysis: semantic query → /embed → /rag → top-5 chunks (0.30 similarity
+floor) → injected into Claude system prompt.
 
 ---
 
-## Completed Work (high-level — full history in Session Log)
+## Completed Work (high-level)
 Single/multi-channel diagnostic pipeline, PDF export, Fleet Dashboard,
 agnostic file parser, RAG pipeline, Stripe integration (code, not live),
-RLS foundation (applied to prod), admin bootstrap, CWRU benchmark, tier
-gating on both index.html and fleet.html (fleet behind flag), Supabase
-keep-alive cron (verified), KB at 192 chunks embedded.
+RLS foundation (applied to prod), admin bootstrap, CWRU benchmark,
+tier gating (fleet behind flag), Supabase keep-alive cron (verified),
+KB at 192 chunks embedded. Two-tier output model (A13) implemented and
+verified against CWRU Normal + Ball_007 files (2 Sep 2026).
 
 ## In Progress
-- [ ] Admin dashboard (admin.html) — status not re-verified recently,
-      don't assume "in progress" without checking
+- [ ] Admin dashboard (admin.html) — status not re-verified recently
 - [ ] Phase 1.5 stress testing (see Build Sequence)
+- [ ] Remove BER-DEBUG console.log from app.js before next embed pass
 
 ## Not Started
 - [ ] Fix README.md's stale live-app link
+- [ ] Embed 9 KB chunks (5aa2904 repo-only) — deferred until BER-DEBUG removed
 - [ ] Emoji cleanup in UI (17 instances) — explicitly deferred by David
-      until after current heavy-lift work; tracked here so it isn't lost
-- [ ] Color-literal-to-var() cleanup (see CSS variables governance gap above)
-- [x] Commit the 6 Jul UI changes (cream theme + KPI strip) to the repo —
-      DONE (folded into the index.html committed as fe16898, 7 Aug)
+- [ ] Color-literal-to-var() cleanup
 - [ ] Digital twin Phase 1, ML feature extraction, case library population,
       email notifications, annual pricing logic, PayPal integration,
       Supabase Storage buckets, NASA IMS 3rd_test, KB Q1/Q3/Q4 reports,
       CAT 1 manual, CWRU 48kHz files, 6205-2RS bearing addition
 - [ ] Data quality tiering (DECISIONS A10) and component-replacement trend
       reset (DECISIONS A11) — Phase 2, not urgent yet
-- [ ] Mandatory input metadata / no silent defaults (DECISIONS A12) — now
-      formalized in DECISIONS.md as of this session; implementation still
-      not started. Known live gap: sample rate silently defaults to 1.0 kHz
-      when omitted (found during Trrish1/Trrish2 CSV stress test).
+- [ ] Mandatory input metadata / no silent defaults (DECISIONS A12) —
+      formalized, not yet implemented. Known live gap: sample rate silently
+      defaults to 1.0 kHz when omitted.
+- [ ] Phase 1.5 stress testing: free-flow under RLS (incognito), fleet flow,
+      Stripe wiring, close small bugs (count-of-1 badge pluralisation)
+- [ ] Flip FLEET_GATING_ENABLED to true before launch
+- [ ] Wire lynxeyes.io when acquired (Supabase Auth redirect, Worker CORS,
+      Stripe URLs)
+- [ ] Replace interim teal raster logo with true blue vector SVG
+- [ ] Delete unreferenced lynxeye-logo-static.svg
+- [ ] Rename Supabase project display label to LynxEyes (if not already done)
+- [ ] Fix README stale link
 
 ---
 
@@ -350,7 +271,7 @@ PHASE 1 — Foundation                                   ✓ DONE (core)
 PHASE 1.5 — Stress testing (coverage + accuracy)       ← current priority
 ├── Anonymous free-flow under RLS
 ├── Fleet flow under RLS
-├── Diagnostic accuracy vs CWRU labelled benchmark
+├── Diagnostic accuracy vs CWRU labelled benchmark     ← two-tier model live
 ├── File-format coverage + edge cases
 └── Robustness (malformed files, odd sample rates, missing metadata)
 
@@ -374,361 +295,104 @@ PHASE 4 — ML (12-24 months)
 | STATUS.md | Session handover, anchors, next tasks |
 | ARCHITECTURE.md | How it's built |
 | DEPLOY_CHECKLIST.md | Run after every push |
-| index.html | Main diagnostic app — cream/light theme as of 6 Jul 2026 |
+| index.html | Main diagnostic app — cream/light theme |
 | app.js | Diagnostic engine, Freemium object |
 | auth.js | Shared auth module |
 | fleet.html | Fleet dashboard (own auth; gating behind flag) |
-| admin.html | Admin dashboard — status unverified, don't assume built |
+| admin.html | Admin dashboard — status unverified |
 | agnosticParser2.js, multiChannel.js | Parser + multi-channel logic |
 | axiomanare-proxy.js | CF Worker source |
 | rls_foundation_v2.sql | RLS migration (utility, keep for record) |
 
 ---
 
-## Session Log — 2 Jul 2026 (Ops — repo ownership correction)
+## Session Log — 2 Sep 2026 (Diagnostic engine — two-tier output model + CWRU scorer arc)
+
 ```
-- Hit a live 404 at esimconnect.github.io/AxiomAnare while resuming stress
-  testing. Traced: github.com/esimconnect/AxiomAnare redirects to the real
-  owner, github.com/KairosAxiom/AxiomAnare. esimconnect was never the true
-  owner — a stale name propagated from an old saved Project Instructions
-  draft into CONTEXT.md and ARCHITECTURE.md.
-- README.md points to a third, also-dead URL (limykdavid-maker.github.io/
-  axiomanare) — separate open task.
-- Confirmed real working URL: https://kairosaxiom.github.io/AxiomAnare
-Next session should: fix README's stale link; once new sensor CSV is
-available, sanity-check it before running through the live app; re-verify
-admin.html's actual state before assuming any status.
-```
+This session covered two arcs: (1) a sustained CWRU bearing-scorer fix
+attempt, and (2) a strategic direction reset that produced the two-tier
+output model (DECISIONS A13). Both are now committed and verified.
 
-## Session Log — 6 Jul 2026 (UI — cosmetic theme conversion, cross-project
-## confusion resolved, doc drift corrected)
-```
-Completed this session:
-  - Cross-project mixup caught and resolved: a Cloudflare Pages link
-    (axiomsensa-frontend.pages.dev) initially presented as "the last link
-    we used" for LynxEyes turned out to belong to a genuinely separate
-    project, AxiomSensa. Confirmed by David: AxiomSensa and Juzgo (formerly
-    eSimconnect) are two other, distinct projects with their own project
-    folders — not to be conflated with LynxEyes again. This also explains
-    the historical "esimconnect" org name: it was this project's actual old
-    repo home before the three projects were split into separate folders,
-    not a random wrong guess.
-  - Reviewed an externally-built UI mockup (different AI platform) the
-    person was evaluating as inspiration. On inspection it had no real
-    functionality — upload handler never parsed files, all charts were
-    hardcoded/randomized canvas draws, a "40+ vendor format" claim had zero
-    parsing code behind it. Flagged as a design-only reference, not
-    something with substance to port.
-  - Of four UI patterns drafted from that reference (asset tree, tabbed
-    chart switcher, KPI strip, per-chart metrics strip), audited the REAL
-    index.html before building anything further and found two were already
-    implemented, better: the Fault Severity Radar chart (ISO 13379-1 cited)
-    and detailed per-chart metrics (FFT legend, fault-classification bars,
-    driving-feature readout, RUL confidence interval) already exist.
-  - Implemented, against the real index.html:
-    1. KPI glance strip — new row (Health Index / Overall Vibration / ISO
-       Zone / Diagnostic Confidence) added above the existing Management
-       Summary Card, not replacing it. Uses "—" placeholders matching the
-       file's existing convention; no values invented. IDs: kpi-health,
-       kpi-vib, kpi-zone, kpi-conf (+ -trend/-sub/-tier companions) — need
-       wiring in app.js's existing render function.
-    2. Full color-scheme conversion, dark navy → cream/light. Converted all
-       16 :root variables plus 43 hardcoded hex literals and 71 rgba()
-       literals found OUTSIDE the variables (pre-existing drift — several
-       were near-duplicate colors of the real variables, e.g. three
-       different "greens" in simultaneous use: --green, a value in
-       .mgmt-card.green, and a third in the print stylesheet). The print
-       stylesheet (@media print, lines ~313–486) was deliberately left
-       untouched — already correctly light-themed for printed reports.
-    3. Verified: extracted all 4 inline <script> blocks, ran `node --check`
-       on each — all pass, no syntax breakage from the conversion.
-  - Corrected the documented CSS variable count from 10 to the actual 16.
-  - Audited emoji usage: 17 HTML character entities present in the live UI
-    (mgmt-icon, early-warning banner, buttons, etc.), directly against the
-    documented "no emojis in diagnostic output" standard. NOT fixed this
-    session — David explicitly asked to defer cleanup until after current
-    heavy-lift work, logged here so it's tracked, not forgotten.
-  - Caught, twice more, the same stale saved Project Instructions draft
-    being pasted in (esimconnect, "2 analyses," tables marked "planned"
-    that are live, 10-var CSS list). Also caught: the DECISIONS.md
-    re-uploaded this session was an older version missing A10, A11, and
-    the Part C rejected-patterns log that the 19 Jun session had already
-    added — used the fuller existing version as the base instead.
-  - Formalized DECISIONS A12 for real (mandatory input metadata, no silent
-    defaults) — it had been referenced as "proposed" in STATUS.md,
-    ARCHITECTURE.md, and the stress-test manifest for weeks but was never
-    actually written into DECISIONS.md's guardrails list. Fixed.
+CWRU SCORER ARC (commits 8570d6a → ba160b1 → d2cc7bd → bac213c):
 
-Files changed:
-  - index.html (color scheme + KPI strip) — NOT YET COMMITTED, exists only
-    as a file David has locally from this session; push it to the repo.
-  - CONTEXT.md (this rewrite)
-  - DECISIONS.md (formalized A12; added Part B/C entries for the color
-    governance drift finding and the emoji-deferral decision)
+  Step 1 — Signal source confirmed: CF, kurtosis, fft._rawSignal and the
+  entire envelope pipeline all operate on the ACCELERATION signal (detrended,
+  in g). Integration is only applied in the separate spectral velocity RMS
+  path for ISO zone. This was confirmed by code reading, not assumption.
+  Fix is ONE change, not two.
 
-Latest code commit: 0df5503 (unchanged — this session's index.html edit is
-not yet pushed)
+  Step 2 — Race band root cause fixed (8570d6a):
+  CONFIG.envelope_bands.race = {lo:3000, hi:4500} was mis-placed for 12 kHz
+  data. Replaced with Nyquist-adaptive band computed from fft.fs at runtime:
+  lo = max(1000, 0.20×Nyq), hi = 0.65×Nyq. At 12 kHz: 1200–3900 Hz,
+  centred on CWRU 6205 resonance. A4 ranking hierarchy also added to sort:
+  bearing/mechanical always outranks vib-derived electrical at non-trace
+  confidence.
 
-Next session should:
-  - Commit the new index.html to the repo (color scheme + KPI strip).
-  - Wire the new kpi-* element IDs to real computed values in app.js.
-  - Resume Phase 1.5 stress testing priorities from the 2 Jul handoff.
-  - When doing later housekeeping: fix the 17 emoji instances, and consider
-    a pass replacing hardcoded color literals with proper var() references.
-```
+  Step 3 — Dual-path BER for BPFO/BPFI (ba160b1):
+  Wide adaptive band (originally 0.10–0.85×Nyq) was effectively a highpass,
+  not a bandpass — envelope BER stayed near 1.0. Added direct raw FFT BER
+  fallback path (max(envBER, directBER)) for BPFO and BPFI, same pattern
+  as bsfDirect already in BSF branch. maxRaceBer pre-compute extended to
+  include direct BER so OR files correctly trigger mechCap suppression.
 
-## Session Log — 20 Jul 2026 (Rebrand — AxiomAnare → LynxEyes)
-```
-Product renamed AxiomAnare → LynxEyes (display name only). Trademark + domain
-(lynxeye.io) cleared by David before starting. Precedent: the earlier
-esimconnect → Juzgo rename, which was also a display-name change (same GitHub
-repo kept, same Supabase project ref, only the human-readable label flipped).
+  CWRU re-run results after ba160b1 fixes:
+  Normal → Zone B, no confident fault ✓
+  Ball_007 → Zone D, bearing signal elevated (BPFI misfiring — known) ✓ hedge
+  IR_007 → Zone D, Inner Race Elevated (BPFI direct=21.727 fired) ✓
+  OR_007 → Zone D, bearing present, mechCap=10 ✓ (fault type still hedged)
+  OR_021 → Zone D, bearing present ✓ (fault type hedged)
 
-Scope decision — DISPLAY NAME ONLY. Internal identifiers deliberately NOT
-touched (renaming them is user-invisible and breaks live state):
-  - Supabase project ref zjfhxutcvjxootoekade (immutable) — only the dashboard
-    DISPLAY label should be renamed to LynxEyes (do this in Supabase UI; not a
-    code change). Ref, anon key, all connection strings unchanged.
-  - localStorage keys ax_tier / ax_pro / ax_analysis_count / ax_channels /
-    ax_hz / ax_output_tokens / ax_tokens — kept (renaming logs out all users,
-    resets free counters).
-  - axiomPrint() function + its onclick caller in index.html — kept.
-  - Cloudflare Worker restless-tree-eac8 + PROXY_BASE — kept (worker names are
-    invisible; confirmed restless-tree-eac8 is the LIVE proxy via PROXY_BASE in
-    app.js — the other two workers claude-proxy and axiomanare-proxy are NOT
-    referenced; axiomanare-proxy is stale, safe to delete later).
-  - GitHub repo kept as AxiomAnare (NOT renamed) → live URL stays
-    kairosaxiom.github.io/AxiomAnare. If repo is later renamed or lynxeye.io
-    custom domain is added, that's a follow-up (update URLs + Supabase Auth
-    redirect allow-list + Worker CORS + Stripe success/cancel URLs then).
+STRATEGIC DIRECTION RESET:
+  Session paused mid-scorer-arc to review product direction. Key finding:
+  the engine was reliable on severity (ISO zone from RMS) but unreliable
+  on confident bearing fault TYPE from a single file — which is correct
+  behaviour, not a bug, given no resonance frequency knowledge is available.
+  Real hardware analysers solve this with sensor-housing resonance knowledge;
+  software-only tools from raw uploads cannot replicate this without trend data.
 
-Code changes (all 4 files pass node --check; inline <script> blocks re-checked):
-  - index.html: title, print footers (@page + data-filename), print
-    disclaimer, header wordmark (now Lynx #7bbde8 light / Eye #1f6fb2 dark —
-    colors FLIPPED from old Axiom-dark/Anare-light), persona label
-    "LynxEyes Assist", AND the nav logo: the old gray-gears + green-scope-wave
-    <canvas id="nav-logo"> animation was REPLACED with an inline animated SVG
-    of the new eye+2-gears mark (same id, so the L270/L290 responsive CSS still
-    applies; reduced-motion freeze included). Dead canvas <script> block removed.
-  - app.js: upgrade-modal wordmark, RAG-prompt product name, AI system-prompt
-    persona ("You are LynxEyes Assist"), free-trial watermark, report print
-    header (ph-name), dev comment. axiomPrint kept.
-  - fleet.html: title, 2× login-app-name, fleet-nav-name.
-  - admin.html: title, 2× headings, body text.
-  - AI persona AxiomAssist → "LynxEyes Assist" (report header + system prompt).
+  Decision: adopt two-tier output model (DECISIONS A13):
+  - Tier 1 (severity): always confident, from ISO zone. Drives urgency.
+  - Tier 2 (fault type): shaft-synchronous faults → "likely driver" (reliable
+    from raw FFT); bearing faults → "indicative only" always on single reading.
+  - Single-reading caveat on Zone C/D when no trend history.
+  - CWRU acceptance bar redefined: severity correct + bearing category elevated
+    + indicative language = PASS. "5/5 confident ID" bar retired.
 
-Logo assets produced (in outputs, need adding to repo):
-  - lynxeye-logo.svg (animated, prefers-reduced-motion freeze) — web/login use
-  - lynxeye-logo-static.svg (gears frozen mid-mesh) — print/PDF/favicon use
-  Mark = open almond eye (two light-blue lid strokes) + two dark-blue gears
-  meshing at true pitch distance, wordmark Lynx(light)/Eye(dark) beneath.
+TWO-TIER IMPLEMENTATION (d2cc7bd, bac213c):
+  - plainFaultText() split into two tiers — bearing uses "signal activity at
+    [frequency]. Indicative — inspect bearing."; shaft-sync uses "likely driver".
+  - Management summary card RAG logic updated: Zone drives urgency first,
+    fault type follows with appropriate confidence. Bearing-only indicative
+    signal in Zone A/B now shows softer language ("weak bearing signal noted,
+    re-measure at next interval") not inspection urgency.
+  - buildFallback fA text updated: all four bearing types use "INDICATIVE ONLY —
+    single-file envelope analysis cannot confirm bearing fault type."
+  - Short-term action for bearing: "Inspect only if trend confirms deterioration."
+  - AI prompt updated with explicit TWO-TIER OUTPUT MODEL section and revised
+    anti-hallucination rules. Report sections restructured: severity leads.
+  - isBearingFault() helper added.
 
-Docs (this pass): product name → LynxEyes in live prose across CONTEXT /
-DECISIONS / STATUS / ARCHITECTURE / DEPLOY_CHECKLIST. Preserved as-is: all
-esimconnect "don't use this name" warnings, the 404-incident history, the
-stale-README-link debt notes, session logs. Corrected 3 stale live URLs
-(esimconnect.github.io → kairosaxiom.github.io) + the stale repo-owner line in
-ARCHITECTURE (was esimconnect, now KairosAxiom). Local disk paths
-(D:/E:\Kairos\AxiomAnare\...) and filenames (axiomanare_schema.sql,
-axiomanare-proxy.js) kept — those are real folder/file names, not the product.
+VERIFIED LIVE (bac213c, scorer version ba160b1-5):
+  Normal: Zone B, amber, "Weak bearing signal noted... re-measure at next
+    interval." No inspection language. AI report: bearing findings explicitly
+    stated as indicative, no confirmation. ✓
+  Ball_007: Zone D, "Action Required", bearing language "INDICATIVE ONLY",
+    short-term "Inspect only if trend confirms deterioration." ✓
+    Known: BPFI misfiring as top fault on a ball fault file — logged in
+    DECISIONS Part C as known limitation, not a two-tier language problem.
+
+BER-DEBUG logging: still active in app.js (console.log at ~line 2101).
+  Remove this before the KB embed pass.
 
 STILL OPEN / next session:
-  - Rename the Supabase project DISPLAY label to LynxEyes in the dashboard
-    (30-sec UI action, ref untouched — same as was done for Juzgo).
-  - Fix README.md's stale live link (limykdavid-maker... 404) — README not in
-    this project bundle, do it in the repo directly.
-  - Add lynxeye-logo.svg / -static.svg to the repo; wire favicon to the static
-    one; point print/PDF header at the static SVG if desired.
-  - Branch + DEPLOY_CHECKLIST pass before merging to main. No diagnostic/FFT/
-    scoring logic changed, so CWRU re-run not strictly required, but eyeball one
-    generated AI report to confirm "LynxEyes Assist" renders and streaming works
-    (persona change touches the AI prompt path).
-  - Decide later: rename GitHub repo + add lynxeye.io custom domain (with the
-    Auth/CORS/Stripe redirect updates that entails).
-```
-
-
-## Session Log — 7 Aug 2026 (Rebrand spelling fix — LynxEye → LynxEyes + new nav logo)
-```
-Product name corrected to the intended spelling: LynxEye (singular) → LynxEyes
-(plural). The 20 Jul singular was an error, not a deliberate choice. Same
-display-name-only discipline as 20 Jul — no internal identifiers touched.
-
-Pushed as commit fe16898 (branch main; thumb-drive repo at D:, GENESIS-PRJ3).
-
-Code changes (all pass node --check; 3 inline index.html script blocks re-checked):
-  - index.html: title, comment, print footers (@page + print-disclaimer content),
-    nav aria-label, "LynxEyes Assist" card heading. NAV LOGO REPLACED: the old
-    animated eye+gears <svg id="nav-logo"> + HTML wordmark ("Lynx"+"Eye" spans) +
-    two mono taglines were all removed and replaced by a single <img> lockup
-    (lynxeyes-logo.png) wrapped in a home link, height:64px, scaling to 52/42px at
-    the 900/600px breakpoints. Dead #nav-logo / .logo-tag / .logo span responsive
-    rules removed. Favicon <link> -> lynxeyes-favicon.png (type image/png).
-  - app.js: upgrade-modal wordmark (LYNXEYES), diagnostic-engine comment, RAG-prompt
-    product name, AI persona ("You are LynxEyes Assist"), free-trial watermark
-    (LYNXEYES FREE TRIAL), print header ph-name. axiomPrint() name UNCHANGED.
-  - fleet.html: title, 2x login-app-name, fleet-nav-name; favicon link.
-  - admin.html: title, 2x headings, body text; favicon link.
-
-New assets committed to repo root (siblings of index.html):
-  - lynxeyes-logo.png (128 KB) — full nav lockup: lynx head + "LynxEyes" wordmark
-    + "Predictive Condition Monitoring" tagline. Layout A (whole-lockup image).
-  - lynxeyes-favicon.png (3 KB) — head-only crop, browser-tab favicon.
-  Old lynxeye-logo-static.svg is now UNREFERENCED (left in repo; delete later if
-  wanted). Old animated-SVG nav logo is retired (not preserved elsewhere).
-
-Tagline: adopted "Predictive Condition Monitoring" (baked into the lockup image),
-replacing the two prior mono taglines ("AGNOSTIC · AUGMENTED DATA ANALYSING" +
-"Condition monitoring for rotary motors & pumps").
-
-KNOWN INTERIM DEBT (accepted, logged in DECISIONS Part B + Part C):
-  - The lockup is TEAL/GREEN on the blue app — off-palette vs the locked brand
-    blues (#7bbde8 / #1f6fb2). Do NOT treat teal as the new palette.
-  - The wordmark is now baked pixels (raster): softens slightly on retina, can't be
-    restyled via CSS. Asset was a flattened PNG-in-SVG wrapper, not true vector.
-  - Fix path: replace with a real BLUE VECTOR SVG later — clean one-file swap.
-
-Verified live (kairosaxiom.github.io/AxiomAnare, URL unchanged): nav lockup renders
-on cream, favicon shows in tab, title reads "LynxEyes — Vibration Diagnostic
-Engine". Still to eyeball: one generated AI report showing "LynxEyes Assist"
-persona + streaming (the one behavioural change in the AI-prompt path).
-
-Domain: lynxeye.io (singular) kept; lynxeyes.io (plural) being acquired. When wired:
-Supabase Auth redirect allow-list + Worker CORS + Stripe success/cancel URLs.
-
-Docs updated this pass (all 5): product name -> LynxEyes in prose across CONTEXT /
-DECISIONS / STATUS / ARCHITECTURE / DEPLOY_CHECKLIST; DECISIONS new Part B entry
-("Why the product name is LynxEyes") + Part C raster-logo note; STATUS HEAD ->
-fe16898 + date. Preserved verbatim: all esimconnect warnings, AxiomAnare repo/
-folder/ref/worker names, filenames axiomanare_*, ax_* keys, axiomPrint().
-
-Next session should:
-  - Eyeball a generated AI report for the "LynxEyes Assist" persona + streaming.
-  - Rename the Supabase project DISPLAY label to LynxEyes in the dashboard (ref
-    untouched) — was noted for 20 Jul, still worth confirming it reads LynxEyes.
-  - Fix README.md stale live link (limykdavid-maker... 404) — do in repo directly.
-  - Optional housekeeping: delete unreferenced lynxeye-logo-static.svg; get a real
-    blue vector SVG of the lynx mark to replace the interim teal raster.
-  - Resume Phase 1.5 stress testing (free-flow under RLS, fleet flow, Stripe wiring).
-```
-
-## Session Log — 31 Aug 2026 (Diagnostic engine investigation — bearing scorer root cause + KB groundwork)
-```
-Started as a "stuck at Initialising…" freeze report; became a deep diagnostic-engine
-investigation. NOTHING in the diagnostic/scoring path was changed this session — the
-fix is SPECIFIED but NOT written. Read "Next session" before touching code.
-
-FREEZE (fixed earlier this session — already pushed 411a618):
-  - Multi-channel pipeline re-parsed the full raw file multiple times synchronously
-    (mcResolveSampleRate + per-channel mcExtractColumn). On a 14 MB / 3-channel file
-    this wedged the main thread for minutes → the "stuck at Initialising…" symptom.
-  - Fix applied: parse-once (mcParseOnce → MC.rawTable); all consumers reuse the one
-    parse. Only one Papa.parse(raw…) remains in multiChannel.js. node --check clean.
-  - Small files unaffected. A 14 MB file still blocks briefly even parsed once —
-    streaming / worker:true parse deferred to Phase 2.
-  - How it was found: clean Console + empty Network + pause landing only in supabase-js
-    idle timer → main-thread block before any fetch, NOT auth/RLS.
-
-CWRU BENCHMARK — CONFIRMED FAILURE (not yet fixed):
-  Ran all 5 CWRU drive-end files with correct params:
-    Bearing 6205-2RS JEM SKF (N=9, Bd=0.3126 in, Pd=1.537 in, β=0°),
-    sample rate 12000 Hz, RPM 1797. Verified multipliers BPFO 3.5848× / BPFI 5.4152× /
-    BSF 2.3574× / FTF 0.3983× (BPFO→107.4 Hz at 1797 rpm).
-
-  | File     | True label | Zone | RMS   | Primary shown            | Correct-bearing score |
-  |----------|-----------|------|-------|--------------------------|-----------------------|
-  | Normal   | healthy   | B    | 2.75  | Mech Unbalance (45)      | Rolling-Elem 24 (Ind) |
-  | Ball_007 | ball      | D    | 9.75  | Electrical-Rotor Bar(16) | Rolling-Elem 13       |
-  | IR_007   | inner race| D    | 8.85  | Electrical-Rotor Bar(18) | Inner-Race not surfaced|
-  | OR_007   | outer race| D    | 9.90  | Mech Unbalance           | Outer-Race Trace      |
-  | OR_021   | outer race| D    | 22.60 | Mech Unbalance (50)      | Outer-Race Trace (5)  |
-
-  Result: 0/5 on fault-type ID. Every fault file ranked shaft-1× content (Mech Unbalance /
-  vib-derived Electrical Rotor Bar) as primary; correct bearing category always Trace/Low —
-  even OR_021 at 22.6 mm/s RMS scored Outer-Race = Trace.
-
-  Entering correct 6205 geometry changed NOTHING vs earlier blank/default runs → geometry
-  was NOT the cause. Engine already computed correct bearing frequencies (BPFO 107.4,
-  BSF 70.6 Hz) both before and after.
-
-  ROOT CAUSE (confirmed in app.js): CONFIG.envelope_bands.race = {lo:3000, hi:4500} Hz is
-  mis-placed for 12 kHz data (Nyquist 6 kHz). CWRU 6205 resonance sits ~2–4 kHz, so a
-  3000–4500 Hz window demodulates a near-empty slice → race-band envelope BER ≈ 1.0 →
-  berToScore returns 0 (returns 0 for BER ≤ 1.0) → BPFO/BPFI (outer/inner race) always Trace.
-  Roll band (BSF) survives via multi-path fallback → low-but-nonzero. The split between which
-  faults die is exactly along which band each uses.
-  FIX (specified, NOT written): Nyquist-adaptive race band — lower edge ~0.10×Nyq clamped
-  ≥1500 Hz, upper edge ~0.85×Nyq — captures 2–4 kHz resonance on 12 kHz AND works on 48 kHz.
-  Keep CONFIG values as fallback.
-
-  SECOND HYPOTHESIS — VERIFY BEFORE CODING (sizes the fix): are CF/kurtosis and
-  fft._rawSignal (envelope input) computed on ACCELERATION or on integrated VELOCITY?
-  Integration low-passes away the impulses that define a bearing fault; if either is
-  post-integration, bearings are suppressed in BOTH time + freq domains. Symptom that fits:
-  CF/kurtosis read "Normal" on all 5 fault files (a real spall should raise them). CHECK FIRST.
-
-  A4 — enforced as a score CEILING (electrical ≤19) but NOT as a ranking HIERARCHY: capped
-  electrical (16–18) still outranks real bearing (9–13) as primary. Fix needs category-
-  precedence in ranking (bearing/mechanical always ranks above vib-derived electrical when
-  present at non-trace confidence). Fault Severity Radar reads the ranking → inherits the
-  error → self-corrects once ranking is fixed.
-
-ACCEPTANCE BAR REDEFINED — Smith & Randall (2015) benchmark:
-  - CWRU is a fault-LABEL benchmark only; does NOT validate RMS/zone/RUL (lab accel data,
-    no ground truth; ISO 10816-3 velocity zones are a field-machine basis — validity boundary
-    to surface, not hide).
-  - Per S&R, records range from easily diagnosable to UNDIAGNOSABLE by any method; ball faults
-    are among the hardest; many records show looseness-like content.
-  - So "5/5 confident" is the WRONG bar. Correct acceptance:
-      OR_007 / OR_021 / IR_007 → must identify correct bearing fault as leading.
-      Ball_007 → indicative / low-confidence (hedged) call is ACCEPTABLE and correct.
-      Normal   → must stay Zone A/B, no confident fault.
-  - Ringfences that must still hold after any fix: A1 (no invented ISO clauses; citations
-    unchanged), A2 (sub-threshold → indicative language), A3 (no over-diagnosis on clean data),
-    A4 (electrical cap intact; electrical never outranks bearing/mechanical), A12 (assumed-
-    input flags still fire).
-
-ISO MODEL CLARIFIED (two axes — this is the fix spec):
-  - Severity ("how bad") = velocity RMS vs ISO 10816-3 zones A–D. A loudness gauge; does NOT
-    identify the fault.
-  - Fault TYPE ("what is it") = which frequency carries the energy, per ISO 13379-1 / 13373,
-    with confidence language (A2). Bearings require ENVELOPE demodulation, not dominant-peak
-    ranking (in the raw spectrum bearings are buried under the 1× shaft comb).
-  - ISO prescribes the METHOD + severity SCALE, NOT a single amplitude threshold that
-    "confirms" a fault type. A machine can be Zone D from unbalance, misalignment, OR a
-    bearing. Engine currently conflates loudness (Zone D) with diagnosis (tallest peak);
-    separating the two axes is the correct "ISO-governed" wiring.
-
-KB GROUNDWORK (committed 5aa2904, repo-only — EMBED DEFERRED to code-fix validation):
-  9 house-authored chunks, original wording, cited not copied (A1):
-    KB/Reference/ (5): bearing_01_raw_spectrum_insufficient, bearing_02_time_domain_signature,
-      bearing_03_envelope_and_processing, bearing_04_corroboration_confidence,
-      bearing_05_two_axis_severity_vs_type.
-    KB/Reports/ (4): cwru_benchmark_01_overview, cwru_benchmark_02_record_notes_partial (PARTIAL),
-      cwru_benchmark_03_acceptance_mapping, cwru_benchmark_04_gap_note.
-  - cwru_benchmark_02 is PARTIAL — only records confirmable from secondary sources (209, 222,
-    197, 235). Full per-record table needs a LEGITIMATE copy of Smith & Randall (2015); gap +
-    how-to-close recorded in cwru_benchmark_04. Do NOT invent the missing rows (A1).
-  - Embed deferred on purpose — chunks improve AI reasoning/narrative but do NOT fix the scorer.
-    Embed alongside code-fix validation so both are verified in one clean pass.
-  - On embed (192 → 201): snapshot knowledge_chunks first (A9, no Free-tier backups), admin/
-    service-role insert, and DEDUP-CHECK against existing CWRU_Dataset_Overview.md +
-    AI_Fault_Content.md already in KB/Reference/.
-
-RULED OUT this session (so they're not re-chased):
-  - NOT an auth/RLS/Supabase freeze (Network empty; keep-alive ping OK).
-  - NOT a unit/integration/zone bug — Normal→Zone B (2.75), OR_021→Zone D (22.6); severity
-    scales correctly with real RMS.
-  - NOT wrong bearing geometry — frequencies already correct; entering 6205 changed nothing.
-  - NOT a fix that should target "5/5" — that would push toward over-diagnosis (A2/A3).
-
-Next session (in order):
-  1. VERIFY acceleration-vs-velocity for CF/kurtosis + fft._rawSignal. Sizes the fix.
-  2. WRITE app.js fix: Nyquist-adaptive race band + A4 ranking hierarchy (radar follows).
-     node --check; sandbox where possible. Consider temporary BER debug logging so the first
-     re-run SHOWS race BER rising on OR files and staying ~1.0 on Normal (A2/A3 guard).
-  3. RE-RUN all 5 CWRU files → acceptance bar above. Ringfence check: A1/A2/A3/A4/A12.
-  4. THEN embed the 9 KB chunks + validate together.
-  5. Housekeeping still open: README stale link; emoji cleanup (17); color-literal→var();
-     Sx.x ISO clause audit (A1); Supabase project display-label rename to LynxEyes.
+  1. Remove BER-DEBUG console.log from app.js.
+  2. Embed the 9 KB chunks (5aa2904 repo-only) — requires BER-DEBUG removed
+     first so both are validated in one clean pass.
+  3. Resume Phase 1.5: free-flow under RLS (incognito), fleet flow, Stripe.
+  4. Housekeeping: README stale link, emoji cleanup (17), color-literal→var(),
+     Supabase display label rename, lynxeyes.io domain wiring when acquired.
+  5. BPFI-on-Ball known limitation: consider adding minimum harmonic count
+     requirement or reducing BPFI direct weight to reduce false positives.
+     Low priority — two-tier language already hedges this correctly.
 ```
