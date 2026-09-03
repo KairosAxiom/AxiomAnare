@@ -143,28 +143,51 @@ downstream of it): the fault classification panel has shown electrical fault cat
 locking mechanical categories, inconsistent with the banner text — worth re-checking once A12 lands,
 since unflagged assumed inputs may be contributing to that misclassification.
 
-### A13. Two-tier output model — severity always confident, fault type honest (formalised 2 Sep 2026)
-> ⚠️ **This copy of DECISIONS.md did not contain A13** although CONTEXT.md (2 Sep 2026) and the session log
-> both cite it as formalised here. The text below is reconstructed from CONTEXT.md on 3 Sep 2026 so the
-> reference doesn't dangle (see Part C, "A guardrail referenced before it's written"). If a 2 Sep copy with
-> the original A13 wording exists, that wording wins — reconcile and delete this note.
+### A13. Two-tier output model — severity confident, bearing fault type indicative (formalised 2 Sep 2026)
 
-**Tier 1 — Severity (always confident):** ISO zone from RMS velocity vs the CONFIG zone boundaries. Zone
-C/D drives urgency and required action unconditionally. Never hedged — it is an objective measurement
-against a published standard boundary.
-**Tier 2 — Fault type (honest confidence):**
-- Shaft-synchronous faults (unbalance, misalignment, looseness): detected from raw FFT peak ratios; stated
-  as "likely driver" when confidence ≥ 20%. Reliable from a single file.
-- Bearing faults (BPFO, BPFI, BSF, FTF): detected via dual-path envelope BER + direct FFT BER; stated as
-  "indicative only" ALWAYS on a single reading. Single-file analysis cannot confirm bearing fault type
-  without sensor-housing resonance knowledge (which hardware analysers have and raw uploads do not).
-  Confident identification requires trend over multiple readings (CF + kurtosis rising over time).
-**Single-reading caveat:** Zone C/D from a single file with no trend history appends "Re-measure to confirm
-before shutdown decision" — the severity is real, but one reading cannot rule out transients.
-**CWRU acceptance bar (Smith & Randall–based):** Normal → Zone A/B, no confident fault; IR_007 / OR_007 /
-OR_021 → correct bearing category elevated with indicative language; Ball_007 → hedge is correct (ball
-faults are the hardest category). The old "5/5 confident identification" bar is RETIRED — it pushed toward
-over-diagnosis, violating A2/A3.
+The diagnostic output is structured into two tiers with different confidence levels.
+This is NOT a hedge on severity — it is an honest representation of what single-file
+analysis can and cannot determine.
+
+**Tier 1 — Severity (always stated with full confidence):**
+ISO zone from RMS velocity vs ISO 10816-3 boundaries is an objective measurement.
+Zone D = act now. Zone C = schedule urgently. This never gets hedged.
+The zone drives urgency and required action regardless of fault type confidence.
+
+**Tier 2 — Fault type (confidence proportional to detection method):**
+- Shaft-synchronous faults (unbalance, misalignment, looseness): detected from
+  raw FFT peak ratios — reliable from a single file. State as "likely driver"
+  when confidence ≥ 20%. Confident language is appropriate.
+- Bearing faults (BPFO, BPFI, BSF, FTF): detected via envelope BER + direct
+  FFT BER. ALWAYS state as "indicative only" on a single reading. Single-file
+  analysis cannot confirm bearing fault type without resonance frequency
+  knowledge — real hardware analysers solve this with sensor-housing resonance
+  data that a software upload tool does not have.
+  Confident bearing identification requires trend over multiple readings
+  (CF + kurtosis rising consistently over time).
+
+**Single-reading caveat:** Zone C/D from a single file without trend history
+appends a note that re-measurement is recommended before a shutdown decision.
+The severity is real; one file cannot rule out a transient.
+
+**Implementation:**
+- plainFaultText(): bearing faults → "Signal activity at [freq]. Indicative — inspect bearing."
+- Management summary card: bearing-only indicative in Zone A/B → soft language,
+  no inspection urgency. Zone C/D → zone drives urgency, bearing type hedged.
+- buildFallback fA: all four bearing types → "INDICATIVE ONLY — single-file
+  envelope analysis cannot confirm bearing fault type."
+- Short-term action for bearing: "Inspect only if trend confirms deterioration."
+- AI prompt: TWO-TIER OUTPUT MODEL section + revised anti-hallucination rules.
+
+**CWRU benchmark acceptance bar (updated, replaces "5/5 confident ID" bar):**
+Per Smith & Randall (2015): some CWRU records are undiagnosable by any method.
+Ball faults are the hardest category. The "5/5 confident identification" bar
+was wrong — it would have required over-diagnosis, violating A2/A3.
+Correct bar:
+  - Normal: Zone A/B, no confident fault. ✓
+  - IR_007 / OR_007 / OR_021: correct bearing category elevated, indicative language. ✓
+  - Ball_007: hedge/indicative is the correct and acceptable output. ✓
+Status: IMPLEMENTED and verified live (bac213c, 2 Sep 2026).
 
 ### A14. Fault-frequency multipliers anchor to the MEASURED 1×, not nameplate RPM (formalised 3 Sep 2026, not yet built)
 Nameplate RPM is the starting point, never the anchor. Motors run below synchronous speed under load
@@ -260,6 +283,31 @@ NOT a nameplate value (it's a sensor/collector property), so the "where to find 
 acquisition device, not the motor nameplate. Verified via web search of ISO 13373-2 and vendor acquisition
 guidance; specific ISO clause numbers for the sample-rate text still to be pinned to CONFIG per A1 before
 any figure is presented as standard-derived.
+
+### Why the two-tier output model was adopted (2 Sep 2026)
+A mid-session strategic review identified that the engine was reliable on
+severity (ISO zone from RMS velocity) but was chasing an unreachable bar on
+confident bearing fault type from a single file. Real hardware analysers
+(SKF @ptitude, Emerson AMS, CSI) solve bearing detection with hardware-level
+resonance knowledge — they know the structural resonance frequency of their own
+sensor housing. LynxEyes processes uploaded files without that knowledge.
+
+The CWRU 0.007" early-stage bearing faults produce modest envelope BERs in the
+1.2–2.8 range, which is at the edge of what software-only analysis can
+discriminate. Attempting to reach "5/5 confident identification" on these files
+required progressively loosening the scoring thresholds in ways that would
+over-diagnose on healthy machines — directly violating A2 and A3.
+
+The two-tier model resolves this honestly: severity is always confident (it is
+an objective ISO measurement), fault type confidence is proportional to the
+detection method's actual reliability. This is more credible than over-stating
+bearing confidence, more useful than refusing to say anything, and more honest
+than any alternative.
+
+Bearing fault identification will improve as customers accumulate trend data
+(CF + kurtosis rising over multiple readings is a reliable signal). The fleet
+dashboard and trend history enable this path — it is a Phase 2 improvement, not
+a pre-launch requirement.
 
 ### Why the color scheme moved from dark navy to cream/light (6 Jul 2026)
 Cosmetic UI decision, not a data or pipeline change. Motivated by comparing an externally-built (other
@@ -444,6 +492,21 @@ arbitrary confidence arithmetic, flat JSON rule schema, early ML with SMOTE on C
   ARCHITECTURE.md, and the stress-test manifest for an extended period before actually being added to
   this file. If a decision is real enough to reference elsewhere, write it into DECISIONS.md the same
   session — don't let a citation outlive its source.
+- **Internal-governance content reachable by the customer-facing prompt (found 3 Sep 2026):** the 9
+  house-authored KB chunks embedded this session carry footers like "Governance: consistent with
+  DECISIONS A1", and the four `cwru_benchmark_0x` chunks describe LynxEyes' own acceptance bar, labelled
+  test files and guardrail IDs. `/rag` returned `cwru_benchmark_03` as a top-5 hit on OR_007, so this text
+  is now injected into a customer's AI report prompt. It was written for humans reading the repo, not for
+  the prompt. Fix (deferred, see below): exclude `category = 'benchmark'` from the RAG query and strip
+  governance footers from reference chunks. Rule going forward: KB chunk text is prompt input — never put
+  DECISIONS IDs, file names, or "acceptance bar" language in a chunk body.
+- **Two ingest generations wrote different columns:** `rag_ingest.py` (121 rows) never set `category`;
+  `embed_kb_whitepapers.js` (71 rows) did. `match_knowledge_chunks()` returns `category`, so 121 rows hand
+  the prompt a NULL. `chunk_text`/`source_category` are legacy duplicates of `content`/`category` — nothing
+  reads them. New ingest scripts must set `content`, `category`, `source_label`, `source_file`, `embedding`.
+- **`rag_ingest.py` chunker emits overlap-only tail slivers:** a file under 600 tokens but over 500 gets a
+  second ~60–80-token chunk that is pure overlap of the first. `rag_ingest_kb9.py` shortcuts single-window
+  files; the original script (and some of the 121 rows) still has the quirk. Check before any re-ingest.
 
 ### Patterns explicitly REJECTED from the old third-party spec review (19 Jun 2026)
 Reviewed and consciously NOT adopted — logged so they don't get reinvented worse later if anyone
@@ -483,6 +546,10 @@ Reviewed and consciously NOT adopted — see Part B (3 Sep 2026) for the review 
 - **Vendor-agnostic via a Python/Streamlit rebuild.** The transcript's stack is irrelevant; LynxEyes'
   agnosticParser2.js already covers CSV/MAT/XLSX/JSON/TSV/TXT. Format coverage is extended in the
   existing parser, not by adopting a second pipeline.
+- **Hardcoded acquisition defaults in the schema** (`sampling_rate = 10000.0`, `line_frequency = 50.0`,
+  `poles = 4`, and `fs = 10000 # default fallback` in the parser). Same bug class as LynxEyes' old silent
+  1.0 kHz default that A12 was written to kill — just a different number. The transcript's dataclass must
+  never be used as a template; every acquisition value is detected, keyed, or flagged (A12).
 
 ### Deferred, not forgotten (open items with an explicit "not now")
 - **Emoji cleanup in the UI** (17 instances found 6 Jul 2026) — violates the documented "no emojis in
@@ -500,9 +567,20 @@ Reviewed and consciously NOT adopted — see Part B (3 Sep 2026) for the review 
   matters depends on whether target users export from enterprise systems or from portable collectors/
   loggers (which mostly emit CSV). Decide from real user file samples during Phase 1.5/3 — do not build
   speculatively.
-- **BPFI misfiring on CWRU Ball_007** (known limitation, logged 2 Sep 2026; noted here 3 Sep 2026 because
-  this copy of DECISIONS.md did not carry it). The direct-FFT BER path elevates BPFI as top fault on a
-  ball-fault file. Ball faults are the hardest category (Smith & Randall) and the two-tier language (A13)
-  already hedges it as "indicative only", so this is a known-and-caveated miss, not a two-tier language
-  problem. Candidate fixes when revisited: minimum harmonic count for BPFI direct, or reduced BPFI direct
-  weight. Low priority.
+- **BPFI misfiring on Ball_007** (found 2 Sep 2026): the dual-path BPFI direct
+  BER picks up significant energy at 162.2 Hz on the Ball_007 file, causing
+  Inner Race to rank above Rolling Element on a known ball fault file. The two-tier
+  language correctly hedges this ("INDICATIVE ONLY") so it does not produce a
+  wrong confident diagnosis. Possible fix: require minimum 2 harmonics above
+  threshold before BPFI direct path fires, or reduce BPFI direct weight vs
+  envelope weight. Deferred — not a language/honesty problem, and low priority
+  given two-tier hedging covers it.
+- **Load state as an input field** (parked 3 Sep 2026, MechEyes review). Idle vs full-load shifts vibration
+  levels; LynxEyes has no load field. A cheap "load %, if known" metadata input surfaced under the A12
+  assumptions note is worth adding when A12 is built (Phase 2). Not before.
+- **RAG hygiene follow-ups from the 3 Sep embed pass** (do together, one small session): (1) exclude
+  `category = 'benchmark'` from `/rag` or the RPC; (2) strip governance footers from the 5 `bearing_0x`
+  chunks and re-embed; (3) backfill `update knowledge_chunks set category = source_category where category
+  is null` (121 rows, prod data change — A9 snapshot first); (4) `KB/Reference/CWRU_Dataset_Overview.md`
+  was never ingested — decide whether it still adds anything next to `cwru_benchmark_01`; (5) drop
+  `knowledge_chunks_bak_20260903` once (1)–(3) are verified.

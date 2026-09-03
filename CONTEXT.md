@@ -1,9 +1,9 @@
 # LynxEyes — Living Project Context
-Last updated: 2 Sep 2026
-Latest code commit: bac213c (bearing-only card branch + buildFallback two-tier language).
-  Scorer arc commits this session: 8570d6a → ba160b1 → d2cc7bd → bac213c.
-  Debug logging (BER-DEBUG console.log) still live in app.js — remove before embed pass.
-  KB chunks committed 5aa2904 (repo-only), embed still deferred — see Next session.
+Last updated: 3 Sep 2026
+Latest code commit: ac779ab (BER-DEBUG logging removed, scorer ba160b1-6 — no scoring change).
+  Docs/scripts commit for this session follows ac779ab (see Session Log 3 Sep).
+  KB: 201 chunks, ALL embedded (192 + the 9 house-authored chunks from 5aa2904).
+  DB snapshot knowledge_chunks_bak_20260903 exists — drop after RAG hygiene pass.
 Company: Kairos Ventures Pte Ltd
 
 ---
@@ -231,7 +231,7 @@ Single/multi-channel diagnostic pipeline, PDF export, Fleet Dashboard,
 agnostic file parser, RAG pipeline, Stripe integration (code, not live),
 RLS foundation (applied to prod), admin bootstrap, CWRU benchmark,
 tier gating (fleet behind flag), Supabase keep-alive cron (verified),
-KB at 192 chunks embedded. Two-tier output model (A13) implemented and
+KB at 201 chunks embedded (3 Sep 2026). Two-tier output model (A13) implemented and
 verified against CWRU Normal + Ball_007 files (2 Sep 2026).
 
 ## In Progress
@@ -303,6 +303,11 @@ PHASE 4 — ML (12-24 months)
 | agnosticParser2.js, multiChannel.js | Parser + multi-channel logic |
 | axiomanare-proxy.js | CF Worker source |
 | rls_foundation_v2.sql | RLS migration (utility, keep for record) |
+| rag_ingest.py, rag_embed.py | Original Python KB ingest/embed pair (needs .env with Voyage key; KB_ROOT hardcoded to E:) |
+| embed_kb_whitepapers.js | One-shot whitepaper embedder via Worker /embed (no dedup — do not re-run) |
+| rag_ingest_kb9.py | 3 Sep: targeted ingest for the 9 house-authored chunks; sets `category`; drive-agnostic |
+| rag_embed_via_worker.py | 3 Sep: embeds NULL-embedding rows via Worker /embed — no local Voyage key needed |
+| .env (untracked, gitignored) | SUPABASE_URL + SUPABASE_SERVICE_KEY (sb_secret_) for the Python scripts |
 
 ---
 
@@ -395,4 +400,79 @@ STILL OPEN / next session:
   5. BPFI-on-Ball known limitation: consider adding minimum harmonic count
      requirement or reducing BPFI direct weight to reduce false positives.
      Low priority — two-tier language already hedges this correctly.
+```
+
+## Session Log — 3 Sep 2026 (Session 10 — BER-DEBUG removal, KB embed, free-flow RLS reproduced)
+```
+Pre-work: DECISIONS.md reconciled. The 3 Sep MechEyes-review copy carried a
+RECONSTRUCTED A13 (flagged in-file); the original 2 Sep wording (DECISIONS_A13_patch.md)
+was spliced in, plus its Part B "Why the two-tier output model was adopted" entry and the
+original Part C BPFI-on-Ball note. Reconstructed-A13 warning removed. A14/A15 and the
+MechEyes review entries untouched. Also added two MechEyes extras David approved:
+Part C rejected "hardcoded acquisition defaults in the schema"; Part C deferred
+"load state as an input field" (Phase 2, with A12).
+Note: 68d2190 (between bac213c and today) = 2 Sep docs close — nothing undocumented.
+
+1. BER-DEBUG removed — commit ac779ab.
+   app.js: 7-line [BER-DEBUG] console.log block (~L2104) deleted; SCORER_VERSION bumped
+   ba160b1-5 → ba160b1-6 purely as a deploy marker. No scoring change (the log only
+   formatted values still computed for scoring). node --check clean. Verified live:
+   console shows "scorer version: ba160b1-6", no [BER-DEBUG] line on analysis.
+
+2. KB embed — 192 → 201, all embedded, retrieval verified live.
+   - A9 snapshot first: create table knowledge_chunks_bak_20260903 as select * … (192 rows).
+   - Dedup check: none of the 9 filenames present; ALSO found KB/Reference/
+     CWRU_Dataset_Overview.md was NEVER ingested (not in rag_ingest.py SOURCES).
+   - Schema reality: match_knowledge_chunks() returns content, category, source_label,
+     source_file (+embedding). chunk_text/source_category are legacy duplicates.
+     121 of the original 192 rows have category = NULL (rag_ingest.py never set it;
+     embed_kb_whitepapers.js did for its 71).
+   - New script rag_ingest_kb9.py (same deterministic-UUID upsert convention as
+     rag_ingest.py; sets category; KB_ROOT relative to script). Dry run initially
+     showed 11 rows: bearing_05 (582 tok) and cwru_03 (556 tok) each produced a
+     second overlap-only tail sliver — chunker quirk inherited from rag_ingest.py.
+     Fixed with a single-window shortcut → 9 rows exactly.
+   - Office machine (GENESIS-PRJ3) had no .env and no tiktoken/voyageai — installed
+     (tiktoken 0.14 builds on Py 3.14). Added .env to .gitignore (was NOT ignored
+     before). Supabase now issues sb_secret_ keys — used as SUPABASE_SERVICE_KEY;
+     publishable key is anon-equivalent and would be blocked by admin-only RLS.
+   - No local Voyage key available (CF secrets are write-only; no known Voyage login).
+     Wrote rag_embed_via_worker.py: embeds via Worker POST /embed ({text}→{embedding}),
+     tries Origin kairosaxiom.github.io then esimconnect.github.io. 9/9 embedded,
+     dim 1024. SQL: 201 total / 201 embedded.
+   - Live retrieval check on OR_007: /rag top-5 = bearing_02 (0.511, #1),
+     Spectrum Analysis.pdf (0.502), Vibration_Reference.md (0.446, category NULL),
+     cwru_benchmark_03 (0.422), PRUFTECHNIK handbook (0.420). Embed proven.
+   - FINDING: cwru_benchmark_03 is INTERNAL content (acceptance bar, DECISIONS IDs,
+     labelled test files) and bearing_0x chunks carry "Governance: … DECISIONS A1"
+     footers — now injected into the customer-facing AI prompt. AI report text not yet
+     audited for leakage. Logged in DECISIONS Part C (pitfall + deferred RAG hygiene
+     bundle: exclude category='benchmark' from /rag, strip footers + re-embed, backfill
+     category, decide on CWRU_Dataset_Overview.md, then drop the _bak table).
+
+3. FREE-FLOW UNDER RLS — REPRODUCED (Phase 1.5 #1, evidence captured).
+   Logged out ("Free to Try"), OR_007 analysis: report renders, AI streams, but
+   app.js:118 POSTs to /rest/v1/nvr_records (x2) and /rest/v1/assets return
+   401 Unauthorized (anon role denied by org-scoped RLS — exactly A8). No user-visible
+   error: the save fails SILENTLY. Design decision still open: force sign-in for the
+   free tier vs a deliberately scoped anon exception. Do NOT reopen policies (A8).
+   This is next session's first item.
+
+Files changed this session:
+  app.js (ac779ab) · DECISIONS.md (reconciled + Part C) · CONTEXT.md (this) ·
+  STATUS.md · .gitignore (+.env) · NEW rag_ingest_kb9.py, rag_embed_via_worker.py.
+  Delete from working dir: DECISIONS_A13_patch.md (merged), patch_kb9.js (already rm'd).
+  Untracked and staying untracked: CONTEXT_admin_session_entry.md, Development Papers/,
+  Logo/, NEXT_SESSION_BRIEF.md, SHAFT_FIX_2026-07-21.md, rls_foundation.sql, .env.
+
+Next session (in order):
+  1. Free-flow under RLS: decide sign-in vs scoped anon exception; implement; verify
+     incognito with 0 red errors and a row in nvr_records. Update DEPLOY_CHECKLIST §5.
+  2. Audit one AI report for internal-governance leakage; then RAG hygiene bundle
+     (DECISIONS Part C, deferred) — small, do it in one pass.
+  3. Fleet flow under RLS, Stripe wiring (Phase 1.5 continues).
+  4. Housekeeping: README link, Supabase display label, emoji (17), color-literal→var(),
+     ISO 20816-3 edition question (A1 open item — rank above cosmetics).
+  5. A14 measured-1x anchoring (also answers the "shaft auto-detect slightly off" question)
+     and A15 resolution guard — Phase 1.5 accuracy work, CWRU re-run after (A6).
 ```
