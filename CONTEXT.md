@@ -268,6 +268,35 @@ trend restored and verified with a non-admin free account (4 Sep 2026, Session 1
   single-reading assets. Harmless; delete when convenient.
 
 ## Not Started
+- [ ] AI narrative: baseline reading (or any reading with no stored baseline)
+      reports a self-comparison deviation_sigma (30+σ seen) and the AI report
+      narrates it as a "step-change from baseline" — on the baseline itself.
+      Fix: null/omit deviation_sigma when is_baseline or no stored baseline
+      exists; tell the prompt explicitly "no baseline established."
+- [ ] AI narrative: Zone A (healthy) readings get "likely driver" fault
+      language (e.g. "Mechanical Unbalance — Elevated, likely driver" on a
+      0.55 mm/s Zone A machine). Scorer works on FFT peak ratios, so a clean
+      healthy 1× tone scores like an unbalance signature. Over-diagnosis in
+      exactly the place A13 exists to prevent. Candidate fix: gate "likely
+      driver" language by ISO zone. Needs a DECISIONS entry once agreed
+      (candidate A17) — found 4 Sep 2026, synthetic trend set 01.
+- [ ] Health index appears weighted toward the indicative tier (fault score /
+      kurtosis) more than the confident tier (zone) — 12-point health drop
+      between two zones on synthetic set 01. Review formula against A13.
+- [ ] FFT + Radar chart legibility: radar axis labels overlap the plot and
+      each other; FFT card cramped sharing a row with radar at current width.
+      Confirmed visually 4 Sep 2026. Layout/CSS only — verify no data-binding
+      touched before skipping the CWRU re-run.
+- [ ] Trend states PRS (slope 0.04–0.15) and SCO (step-change, sd 3.5) not yet
+      exercised by any test. Synthetic set 01 only reached PRA. Needs a
+      slow-creep set (PRS) and a sudden-jump-on-flat-baseline set (SCO).
+- [ ] "Loose Foundation" (15.0 Hz, 8 harmonics, score 10) appearing on
+      synthetic files with no sub-harmonic content from reading 3 onward —
+      likely noise-floor/threshold issue, not yet confirmed.
+- [ ] Synthetic data generator ran ~2× low on RMS velocity (calibration bug
+      in the test-data script, not the app) — zones landed one band low
+      (A,A,A,B,B,C vs intended A,A,B,C,C,D). Trend direction/order unaffected.
+      Fix generator calibration before set 02.
 - [ ] Fix README.md's stale live-app link
 - [ ] fleet.html register path NOT re-verified after org_of_one_v1 guard change
       (creates org then assigns it — guard now permits only owner→owner moves)
@@ -597,3 +626,42 @@ Next session (in order):
   4. Fleet flow under RLS, Stripe wiring (Phase 1.5 continues).
   5. A14 measured-1× anchoring, A15 resolution guard — CWRU re-run after (A6).
 ```
+
+Item 1 above was completed same day (see below) — pulled forward once the
+trend fix (commits 3f59f45, 97ebc25) was verified working.
+
+## Session Log — 4 Sep 2026 addendum — synthetic trend set 01 (outer race)
+
+Ran the deferred trend-direction test same session: one asset (SYN-OR-01), six
+weekly synthetic readings (7 Aug – 11 Sep), single outer-race defect growing
+from nothing to Zone C, non-admin test account, distinct measurement dates.
+
+RESULT: PASS on everything the test was built to check. Trend codes DDU, DDU,
+PRA, PRA, PRA, PRA — matches the engine's own regression rule exactly. RUL
+fell every reading (329 → 24 days). Top fault became Outer Race from reading
+3 and strengthened monotonically (20% → 51%). Six points plotted in correct
+date order on the trend chart, including one accidental same-day duplicate
+(readings 3 and 4 both entered 21 Aug) — created_at tie-break handled it
+correctly on real data, not just in isolated testing. Off-by-one fix confirmed:
+reading 3 showed PRA, not DDU. Sample rate, shaft frequency (29.95 Hz) and all
+four 6205 bearing frequencies auto-detected/computed correctly.
+
+Zones landed one band low (A,A,A,B,B,C instead of intended A,A,B,C,C,D) — this
+is a calibration bug in the synthetic-data generator (Session 11 scratch
+script, not in the repo), not in the app. Direction and sequence were
+unaffected either way.
+
+THREE FINDINGS surfaced by having a working trend pipeline for the first time
+(none are trend/scoring bugs — all AI-narrative or health-index issues; see
+Not Started above for detail): baseline reading narrates a deviation from
+itself; Zone A readings get "likely driver" fault language; health index
+weighted toward indicative tier over zone. Plus a pre-existing but newly-
+visible legibility problem: FFT and radar chart cards overlap/compress at
+current size, confirmed from the results deck screenshots.
+
+Session 12 brief written (NEXT_SESSION_BRIEF.md, not yet committed — merge
+with any existing untracked brief of the same name in the repo folder):
+Part 1 narrative-accuracy fixes (no CWRU re-run), Part 2 FFT/radar layout
+(CSS only, verify before skipping CWRU re-run), Part 3 PRS/SCO trend states
++ corrected-calibration synthetic set 02.
+
