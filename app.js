@@ -1,6 +1,7 @@
 // ── VERSION (update each deploy for verification) ─────────────────────────
 const SCORER_VERSION = 'ba160b1-6'; // BER-DEBUG logging removed (no scoring change vs ba160b1-5)
-console.log('[LynxEyes] scorer version:', SCORER_VERSION);
+const SB_VERSION = 'sb-jwt-1';       // Supabase client: session JWT + non-2xx logging (DECISIONS A14)
+console.log('[LynxEyes] scorer version:', SCORER_VERSION, '| supabase client:', SB_VERSION);
 
 // ══ SUPABASE CONFIG ══════════════════════════════════════════════════════
 const SUPABASE_URL = 'https://zjfhxutcvjxootoekade.supabase.co';
@@ -99,35 +100,60 @@ const Freemium = {
 
 
 const SB = {
-  headers() {
+  // ── Auth ─────────────────────────────────────────────────────────────────
+  // Under RLS v2 (DECISIONS A8) every customer-silo write (assets / baselines /
+  // nvr_records) must carry the signed-in user's JWT. app.js loads BEFORE
+  // supabase-js and auth.js (see index.html script order), so the client is
+  // resolved lazily at request time, never at load time.
+  async token() {
+    try {
+      if (typeof supabaseClient === 'undefined' || !supabaseClient?.auth) return null;
+      const { data } = await supabaseClient.auth.getSession();
+      return data?.session?.access_token || null;
+    } catch(e) { return null; }
+  },
+  async isAuthenticated() { return !!(await this.token()); },
+  async headers() {
+    const jwt = await this.token();
     return {
       'apikey': SUPABASE_ANON_KEY,
-      'Authorization': 'Bearer ' + SUPABASE_ANON_KEY,
+      'Authorization': 'Bearer ' + (jwt || SUPABASE_ANON_KEY),
       'Content-Type': 'application/json',
       'Prefer': 'return=representation'
     };
   },
+  // ── Response handling ────────────────────────────────────────────────────
+  // DECISIONS A14: a non-2xx response is NEVER swallowed silently. Log table,
+  // status and PostgREST message so an RLS refusal (42501) is visible in the
+  // Console instead of surfacing as "0 readings" in the UI.
+  async _handle(r, method, table) {
+    if (r.ok) return r.json();
+    let msg = '';
+    try { const j = await r.json(); msg = (j.code ? j.code + ' ' : '') + (j.message || ''); } catch(e) {}
+    console.warn('[SB] ' + method + ' ' + table + ' -> HTTP ' + r.status + (msg ? ' — ' + msg : ''));
+    return null;
+  },
   async get(table, params='') {
     try {
-      const r = await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+params, { headers: this.headers() });
-      return r.ok ? r.json() : null;
-    } catch(e) { return null; }
+      const r = await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+params, { headers: await this.headers() });
+      return this._handle(r, 'GET', table);
+    } catch(e) { console.warn('[SB] GET ' + table + ' failed:', e.message); return null; }
   },
   async post(table, body) {
     try {
       const r = await fetch(SUPABASE_URL+'/rest/v1/'+table, {
-        method: 'POST', headers: this.headers(), body: JSON.stringify(body)
+        method: 'POST', headers: await this.headers(), body: JSON.stringify(body)
       });
-      return r.ok ? r.json() : null;
-    } catch(e) { return null; }
+      return this._handle(r, 'POST', table);
+    } catch(e) { console.warn('[SB] POST ' + table + ' failed:', e.message); return null; }
   },
   async patch(table, params, body) {
     try {
       const r = await fetch(SUPABASE_URL+'/rest/v1/'+table+'?'+params, {
-        method: 'PATCH', headers: this.headers(), body: JSON.stringify(body)
+        method: 'PATCH', headers: await this.headers(), body: JSON.stringify(body)
       });
-      return r.ok ? r.json() : null;
-    } catch(e) { return null; }
+      return this._handle(r, 'PATCH', table);
+    } catch(e) { console.warn('[SB] PATCH ' + table + ' failed:', e.message); return null; }
   }
 };
 // ══ END SUPABASE CONFIG ═══════════════════════════════════════════════════
@@ -1096,7 +1122,12 @@ async function runPipeline(raw, filename) {
   // Resolve asset and load baseline/history (non-blocking with fallback)
   let assetRecord = null, baseline = null, history = [];
   let devSc, devRow;
+  // persistState: 'anon' (not signed in — nothing saved, by design under A8),
+  //               'ok' (asset resolved), 'failed' (signed in but Supabase refused)
+  let persistState = 'anon';
+  const isAuthed = await SB.isAuthenticated();
   try {
+    if (!isAuthed) throw new Error('not signed in — skipping asset/history lookup (A8)');
     assetRecord = await resolveAsset(
       machineParams.assetName || 'unknown',
       selClassId,
@@ -1104,12 +1135,16 @@ async function runPipeline(raw, filename) {
       machineParams.measPoint || ''
     );
     if (assetRecord && assetRecord.id) {
+      persistState = 'ok';
       [baseline, history] = await Promise.all([
         loadBaseline(assetRecord.id),
         loadAssetHistory(assetRecord.id, 10)
       ]);
+    } else {
+      persistState = 'failed';
+      console.warn('[SB] asset could not be resolved — reading will NOT be saved. Check [SB] warnings above.');
     }
-  } catch(e) { console.log('Supabase baseline load failed:', e.message); }
+  } catch(e) { console.log('Supabase baseline load skipped:', e.message); }
 
   if (baseline && parseFloat(baseline.mean_rms) > 0) {
     const blMean = parseFloat(baseline.mean_rms);
@@ -1150,7 +1185,10 @@ async function runPipeline(raw, filename) {
     // No baseline yet — use signal self-statistics
     devSc  = (rms - mean) / std;
     devRow = classifyDeviation(Math.abs(devSc));
-    const baselineNote = isBaselineUpload ? ' · Will set baseline' : ' · No baseline yet';
+    const baselineNote = isBaselineUpload ? ' · Will set baseline'
+      : persistState === 'anon' ? ' · Sign in to save readings'
+      : persistState === 'failed' ? ' · Not saved (see Console)'
+      : ' · No baseline yet';
     doneStage(2, devRow.classification+' ('+devSc.toFixed(2)+'sigma'+baselineNote+')');
   }
 
@@ -1165,7 +1203,10 @@ async function runPipeline(raw, filename) {
   } else {
     // DDU — insufficient history for trend (ISO 13373-2:2016 §8.2)
     trendRow = CONFIG.trend_state_rules.find(r => r.code === 'DDU');
-    doneStage(3, 'DDU — '+trendRow.label+' ('+(history.length)+' reading'+(history.length===1?'':'s')+' — need 3+)');
+    const trendNote = persistState === 'anon' ? 'sign in to build trend history'
+      : persistState === 'failed' ? 'reading not saved'
+      : (history.length)+' reading'+(history.length===1?'':'s')+' — need 3+';
+    doneStage(3, 'DDU — '+trendRow.label+' ('+trendNote+')');
   }
 
   // Stage 4  -  ISO Zone
@@ -1287,6 +1328,7 @@ async function runPipeline(raw, filename) {
     historyCount: history.length,
     assetName: machineParams.assetName || null,
     machineParams: {...machineParams},
+    _persist: persistState,
     _history: history };
 
   await new Promise(r => setTimeout(r, 250));
@@ -1298,8 +1340,13 @@ async function runPipeline(raw, filename) {
 
   // Save to Supabase (non-blocking — runs in background)
   (async () => {
+    if (persistState !== 'ok' || !assetRecord?.id) {
+      console.log('[SB] reading not persisted (' + persistState + ')');
+      return;
+    }
     try {
-      const savedNVR = await saveNVRToSupabase(nvr, assetRecord?.id || null, isBaselineUpload);
+      const savedNVR = await saveNVRToSupabase(nvr, assetRecord.id, isBaselineUpload);
+      if (!savedNVR) { nvr._persist = 'failed'; if (window._lastTrendArgs) buildTrendChart(...window._lastTrendArgs); }
       // If marked as baseline upload, save/update baseline record
       if (isBaselineUpload && assetRecord?.id) {
         const baselineRecords = history.length > 0
@@ -2807,7 +2854,11 @@ function buildTrendChart(d, history) {
 
   const count = readings.length;
   const badge = document.getElementById('trend-reading-count');
-  if (badge) badge.textContent = count + ' reading' + (count===1?'':'s') + (count<3?' — need 3+ for trend':'');
+  if (badge) {
+    if (d._persist === 'anon')        badge.textContent = 'Sign in to save readings and trend this asset';
+    else if (d._persist === 'failed') badge.textContent = count + ' reading' + (count===1?'':'s') + ' — this reading was NOT saved (see Console)';
+    else                              badge.textContent = count + ' reading' + (count===1?'':'s') + (count<3?' — need 3+ for trend':'');
+  }
   const chartBadge = document.getElementById('trend-chart-badge');
   if (chartBadge) {
     chartBadge.textContent = d.trendRow.code + ' — ' + d.trendRow.label;
@@ -3539,8 +3590,8 @@ function mdToHtml(md) {
           btn.innerHTML = '&#10003; Baseline saved'; btn.style.background = '#22c55e';
           setTimeout(function(){ toast.remove(); }, 2200);
         } else {
-          btn.textContent = '(!) Login to save'; btn.style.background = '#e74c3c';
-          setTimeout(function(){ toast.innerHTML += "<div style='margin-top:10px;font-family:IBM Plex Mono,monospace;font-size:10px;color:#7f93aa;text-align:center;'><a href='fleet.html' style='color:#4d9de0;text-decoration:none;'>Sign in to Fleet Dashboard</a> to save baselines</div>"; }, 400);
+          btn.textContent = '(!) Sign in to save'; btn.style.background = '#e74c3c';
+          setTimeout(function(){ toast.innerHTML += "<div style='margin-top:10px;font-family:IBM Plex Mono,monospace;font-size:10px;color:#7f93aa;text-align:center;'><a href='#' onclick=\"if(window.Auth)Auth.openModal('login');return false;\" style='color:#4d9de0;text-decoration:none;'>Sign in</a> to save baselines and trend this asset</div>"; }, 400);
         }
       } catch(e){ btn.textContent='(!) Error'; btn.style.background='#e74c3c'; setTimeout(function(){ toast.remove(); },3000); }
     };

@@ -180,10 +180,12 @@
       <!-- SUBSCRIBE PANEL -->
       <div id="ax-panel-subscribe" style="display:none;padding:28px 32px 24px;">
         <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;margin-bottom:6px;letter-spacing:0.3px;">Create your account</div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:18px;line-height:1.5;">Select a plan, enter your details, and proceed to payment.</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--muted);margin-bottom:18px;line-height:1.5;">Select a plan and enter your details. Free accounts save readings and build asset trend history; paid plans add AI reports and fleet management.</div>
 
         <!-- Tier cards -->
+        <!-- FREE_SIGNUP_ENABLED (below) controls whether the Free card is offered. Testing phase: enabled. -->
         <div id="ax-tier-cards" style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+          ${FREE_SIGNUP_ENABLED ? _tierCard('free', 'Free', '$0', '', '5 analyses · Saved readings · Asset trend history', false) : ''}
           ${_tierCard('pro',           'Pro',           '$49',  '/month', 'Unlimited analyses · Full AI report',         false)}
           ${_tierCard('fleet_starter', 'Fleet Starter', '$99',  '/month', 'Up to 10 assets · Fleet dashboard · AI report', false)}
           ${_tierCard('fleet_pro',     'Fleet Pro',     '$299', '/month', 'Up to 30 assets · Priority support',          false)}
@@ -276,11 +278,21 @@
       </label>`;
   }
 
-  let _selectedTier = 'pro';
+  // ── Free signup flag ──────────────────────────────────────────────────────
+  // true  = Subscribe modal offers a $0 Free card that creates the account with
+  //         NO Stripe call (needed so trend/persistence can be tested under RLS v2).
+  // false = paid tiers only (Stripe path). Flip back before launch — tracked in
+  //         CONTEXT.md. Product decision on whether Free keeps persistence is open.
+  const FREE_SIGNUP_ENABLED = true;
+  const ALL_TIERS = ['free', 'pro', 'fleet_starter', 'fleet_pro'];
+
+  let _selectedTier = FREE_SIGNUP_ENABLED ? 'free' : 'pro';
 
   function _selectTier(tier) {
     _selectedTier = tier;
-    ['pro', 'fleet_starter', 'fleet_pro'].forEach(function (t) {
+    const btn = document.getElementById('ax-signup-btn');
+    if (btn && !btn.disabled) btn.textContent = _signupBtnLabel();
+    ALL_TIERS.forEach(function (t) {
       const card  = document.getElementById('ax-tier-' + t);
       const radio = document.getElementById('ax-tier-radio-' + t);
       if (!card) return;
@@ -294,6 +306,10 @@
         if (radio) radio.innerHTML = '';
       }
     });
+  }
+
+  function _signupBtnLabel() {
+    return _selectedTier === 'free' ? 'Create Free Account' : 'Continue to Payment';
   }
 
   // ── Modal open / close ─────────────────────────────────────────────────────
@@ -331,7 +347,7 @@
       tabLogin.style.cssText   = _tabStyle(false);
       tabSub.style.cssText     = _tabStyle(true);
       // Default select Pro tier
-      _selectTier(_selectedTier || 'pro');
+      _selectTier(_selectedTier || (FREE_SIGNUP_ENABLED ? 'free' : 'pro'));
       setTimeout(function () {
         const el = document.getElementById('ax-signup-email');
         if (el) el.focus();
@@ -392,6 +408,13 @@
       const authData = await signUp(email, password);
       const userId   = authData?.user?.id;
 
+      // Free tier — account only, no Stripe. handle_new_user creates the
+      // profile (tier=free) and, after the org-of-one migration, its organisation.
+      if (_selectedTier === 'free') {
+        _showSignupSuccess(email, true);
+        return;
+      }
+
       if (!userId) {
         // Supabase email confirmation required — user not yet active
         // Still proceed to checkout; Stripe webhook will update tier on payment
@@ -426,8 +449,25 @@
 
     } catch (err) {
       _showError(errEl, _friendlyError(err.message));
-      _setLoading(btn, 'Continue to Payment', false);
+      _setLoading(btn, _signupBtnLabel(), false);
     }
+  }
+
+  function _showSignupSuccess(email, isFree) {
+    const panel = document.getElementById('ax-panel-subscribe');
+    if (!panel) return;
+    panel.innerHTML = `
+      <div style="text-align:center;padding:12px 0 8px;">
+        <div style="font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:700;margin-bottom:8px;">Account created</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);line-height:1.7;margin-bottom:18px;">
+          A confirmation email has been sent to<br>
+          <span style="color:var(--accent);">${email}</span><br><br>
+          ${isFree
+            ? 'Confirm your email, then sign in. Your readings will be saved per asset so trend state can be established from the third reading (ISO 13373-2:2016 &sect;8.2).'
+            : 'You will be directed to Stripe checkout to activate your subscription.'}
+        </div>
+        <button onclick="Auth.openModal('login')" style="${_primaryBtnStyle()}">Sign in</button>
+      </div>`;
   }
 
   // ── Payment result: handle ?payment=success / ?payment=cancelled ──────────
