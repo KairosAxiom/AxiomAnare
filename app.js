@@ -1,5 +1,5 @@
 // ── VERSION (update each deploy for verification) ─────────────────────────
-const SCORER_VERSION = 'ba160b1-7'; // trend: current reading counted toward 3-reading minimum; created_at tie-break on history order. No FFT/fault-scoring change vs ba160b1-6.
+const SCORER_VERSION = 'ba160b1-8'; // Session 12 finding 1a: no-baseline reading no longer synthesizes a self-statistics deviation-sigma (was narrating "step-change from baseline" on the baseline reading itself). devSc=null path added; no FFT/fault-scoring change vs ba160b1-7.
 const SB_VERSION = 'sb-jwt-1';       // Supabase client: session JWT + non-2xx logging (DECISIONS A14)
 console.log('[LynxEyes] scorer version:', SCORER_VERSION, '| supabase client:', SB_VERSION);
 
@@ -597,7 +597,7 @@ async function saveNVRToSupabase(nvr, assetId, isBaseline) {
       peak_mms:        parseFloat(nvr.peak),
       crest_factor:    parseFloat(nvr.cf),
       kurtosis:        parseFloat(nvr.kurt),
-      deviation_sigma: parseFloat(nvr.devSc),
+      deviation_sigma: nvr.devSc === null ? null : parseFloat(nvr.devSc),
       iso_zone:        nvr.zoneRow?.zone_label,
       trend_code:      nvr.trendRow?.code,
       rul_days:        nvr.rulR?.days,
@@ -1185,14 +1185,20 @@ async function runPipeline(raw, filename) {
       doneStage(2, devRow.classification+' ('+devSc.toFixed(2)+'σ vs baseline '+blMean.toFixed(3)+' mm/s · '+stdSource+')');
     }
   } else {
-    // No baseline yet — use signal self-statistics
-    devSc  = (rms - mean) / std;
-    devRow = classifyDeviation(Math.abs(devSc));
+    // No baseline yet — Session 12 finding 1a: this branch used to compare the
+    // reading against its own internal sample mean/std (self-statistics), which
+    // is not a baseline comparison at all — it produced large, meaningless sigma
+    // values (~30sigma seen on both synthetic and CWRU normal runs) that the AI
+    // then narrated as a "step-change relative to baseline" on the reading that
+    // IS the baseline. devSc is now explicitly null; nothing downstream should
+    // compute or display a deviation figure until a real baseline exists.
+    devSc  = null;
+    devRow = { classification: 'No Baseline Established', iso_reference: 'ISO 13373-2:2016 S8.1' };
     const baselineNote = isBaselineUpload ? ' · Will set baseline'
       : persistState === 'anon' ? ' · Sign in to save readings'
       : persistState === 'failed' ? ' · Not saved (see Console)'
       : ' · No baseline yet';
-    doneStage(2, devRow.classification+' ('+devSc.toFixed(2)+'sigma'+baselineNote+')');
+    doneStage(2, 'No baseline established'+baselineNote);
   }
 
   // Stage 3  -  Trend State Assessment — ISO 13373-2:2016 §8.2
@@ -1269,7 +1275,7 @@ async function runPipeline(raw, filename) {
     rms, kurt, cf,
     finalZoneRow.zone_label,
     topBearingFault ? topBearingFault.pct : 0,
-    Math.abs(parseFloat(devSc)),
+    devSc === null ? 0 : Math.abs(parseFloat(devSc)),
     classRow
   );
 
@@ -1327,7 +1333,7 @@ async function runPipeline(raw, filename) {
 
   nvr = { filename, rms: rms.toFixed(3), peak: peak.toFixed(3), cf: cf.toFixed(2),
     dataTypes, dataBanner,
-    kurt: kurt.toFixed(2), devSc: devSc.toFixed(2), devRow,
+    kurt: kurt.toFixed(2), devSc: devSc === null ? null : devSc.toFixed(2), devRow,
     zoneRow: finalZoneRow, trendRow,
     earlyWarn, faults: faults.length ? faults : allFaults.slice(0, CONFIG.fault_display_limit),
     fftR, rulR: finalRulR, n, sr, srSource, sampleRateAssumed, sampleRateBanner, analysisAssumptions, classRow, cu, shaftHz,
@@ -2686,7 +2692,7 @@ function renderResults(){
     {lb:'Peak',v:d.peak,u:d.cu,c:'var(--text)'},
     {lb:'Crest Factor',v:d.cf,u:cfL,c:cfL==='High'?'var(--orange)':cfL==='Elevated'?'var(--yellow)':'var(--text)'},
     {lb:'Kurtosis',v:d.kurt,u:kL,c:kL==='High impacting'?'var(--orange)':kL==='Elevated'?'var(--yellow)':'var(--text)'},
-    {lb:'Deviation',v:d.devSc+'sigma',u:d.devRow.classification,c:['Significant Deviation','Step-Change'].includes(d.devRow.classification)?'var(--orange)':'var(--green)'},
+    {lb:'Deviation',v:d.devSc===null?'—':d.devSc+'sigma',u:d.devRow.classification,c:d.devSc===null?'var(--muted)':['Significant Deviation','Step-Change'].includes(d.devRow.classification)?'var(--orange)':'var(--green)'},
     {lb:'Samples',v:d.n.toLocaleString(),u:(d.sr/1000).toFixed(1)+' kHz',c:'var(--accent)'},
   ].map(i=>'<div class="nvr-item"><div class="nvr-label"><span class="tip">'+i.lb+'<span class="tip-box">'+tips[i.lb]+'</span></span></div><div class="nvr-val" style="color:'+i.c+'">'+i.v+'</div><div class="nvr-unit">'+i.u+'</div></div>').join('');
   document.getElementById('nvr-clauses').innerHTML='<span class="clause">'+d.devRow.iso_reference+'</span><span class="clause">ISO 13373-1:2002 S5.2</span>';
@@ -3133,6 +3139,7 @@ async function streamClaude(){
   const flags=[];
   if(d.singleFile)flags.push('SINGLE_FILE: Trend is DDU. One snapshot only  -  do NOT imply deterioration trajectory.');
   if(!d.singleFile)flags.push('MULTI_READING: Trend '+d.trendRow.code+' derived from '+d.historyCount+' historical readings. Trend direction is established.');
+  if(d.devSc===null)flags.push('NO_BASELINE: No prior baseline exists for this asset. This reading establishes the reference. Do NOT describe it as a deviation, step-change, or divergence from baseline — there is nothing yet to deviate from.');
   if(d.faults[0]&&d.faults[0].pct<40)flags.push('LOW_CONFIDENCE: Top fault '+d.faults[0].pct+'%  -  use indicative language only.');
   const zA=getZonesForClass(selClassId)[0];
   if(parseFloat(d.rms)<zA.rms_upper_mm_s)flags.push('ZONE_A: Machine in Zone A. Routine monitoring only  -  do not over-diagnose.');
@@ -3172,7 +3179,9 @@ async function streamClaude(){
     '','=== NVR RECORD ===',
     'File: '+d.filename+' | Samples: '+d.n+' | Sample rate: '+d.sr+' Hz',
     'RMS: '+d.rms+' '+d.cu+' | Peak: '+d.peak+' | CF: '+d.cf+' ['+getCFLabel(parseFloat(d.cf))+'] | Kurtosis: '+d.kurt+' ['+getKLabel(parseFloat(d.kurt))+']',
-    'Deviation: '+d.devSc+'sigma  -  '+d.devRow.classification+' ('+d.devRow.iso_reference+')',
+    d.devSc===null
+      ? 'Deviation: No baseline established yet for this asset  -  this reading will become the reference for future comparisons ('+d.devRow.iso_reference+').'
+      : 'Deviation: '+d.devSc+'sigma  -  '+d.devRow.classification+' ('+d.devRow.iso_reference+')',
     'ISO Zone: '+d.zoneRow.zone_label+'  -  '+d.zoneRow.action_required+' ('+d.zoneRow.iso_clause_ref+')',
     'Trend: '+d.trendRow.code+'  -  '+d.trendRow.label+' ('+d.trendRow.iso_reference+')',
     'Early Warning: '+d.earlyWarn+(d.earlyWarn?' ('+CONFIG.early_warning_rule.iso_reference+')':''),
@@ -3398,7 +3407,10 @@ function buildFallback(d){
     ? 'Sub-harmonic and multiple shaft harmonics present, ' + top.harmonics_used + ' matched. '
       + 'Mechanical looseness is the likely driver. Inspect hold-down bolts and baseplate integrity. Per ' + top.iso_reference + '.'
     : 'Signal activity at ' + top.name + ' frequency, ' + top.harmonics_used + ' harmonic(s) matched. Per ' + top.iso_reference + '.';
-  return '## 1. Diagnostic Summary\nISO Zone '+d.zoneRow.zone_label+' ('+d.zoneRow.iso_clause_ref+'). RMS: '+d.rms+' '+d.cu+' on '+d.classRow.machine_type_desc+'.\n'+d.zoneRow.action_required+'\nDeviation: '+d.devSc+'sigma ('+d.devRow.classification+', '+d.devRow.iso_reference+').\nTrend: '+d.trendRow.code+'  -  '+d.trendRow.description+' ('+d.trendRow.iso_reference+').\n'+(d.singleFile?'\nNote: Single measurement file  -  trend direction cannot be established from one snapshot. Multiple readings required per '+d.trendRow.iso_reference+'.':'\nNote: Trend '+d.trendRow.code+' derived from '+d.historyCount+' readings ('+d.trendRow.iso_reference+').')+'\n\n## 2. Primary Fault Analysis\n*'+top.iso_reference+'*\n\n'+top.name+': Fault Indicator — '+faultIndicatorLabel(top.pct)+'.\n'+fA+(sec?'\nSecondary indicator: '+sec.name+' — '+faultIndicatorLabel(sec.pct)+' ('+sec.iso_reference+').':'')+'\n\n## 3. Recommended Actions\n**Immediate:**\n'+(zI===allZ.length-1?'* Controlled shutdown required. Do not restart without engineering authorisation. ('+d.zoneRow.iso_clause_ref+')':zI===allZ.length-2?'* Schedule maintenance within 7 days. ('+d.zoneRow.iso_clause_ref+')':'* Continue current schedule. Document per ISO 55001:2014 S7.5.')+'\n\n**Short-term:**\n* '+(top.category==='bearing'?'Bearing signal is indicative only on single reading. Re-measure at next scheduled interval ('+mi.interval_desc+'). Track CF and Kurtosis trend over multiple readings to build confidence (ISO 13373-2:2016 §8.2). Inspect only if trend confirms deterioration.':top.name.includes('Imbalance')?'Dynamic balance per ISO 1940-1.':top.name.includes('Misalignment')?'Precision alignment. Check soft-foot per ISO 10816-3.':top.name.includes('Looseness')?'Inspect hold-down bolts, grout and baseplate integrity.':'Continue monitoring. Re-baseline post any maintenance (ISO 13373-2:2016 S8.1).')+'\n\n**Long-term:**\n* Re-baseline post-maintenance (ISO 13373-2:2016 S8.1).\n\n## 4. Monitoring Guidance\n*'+mi.iso_reference+'*\n\nInterval: '+mi.interval_desc+'.\nMeasure H/V/A at bearing housings (ISO 13373-1:2002 S5.2). Track RMS, CF, Kurtosis.\n\n## 5. RUL & Prognostic Note\n*'+d.rulR.iso_reference+'*\n\nRUL: '+d.rulR.days+'d +/- '+d.rulR.ci+'d CI.\n'+(d.rulR.days<60?'Below 60 days  -  begin maintenance planning immediately.':'Continue trending to improve RUL accuracy.')+'\nPer '+d.rulR.iso_reference+': this estimate must not be the sole criterion for maintenance deferral. Qualified engineering review required.';
+  const devLine = d.devSc===null
+    ? 'No baseline established yet  -  this reading will become the reference ('+d.devRow.iso_reference+').'
+    : d.devSc+'sigma ('+d.devRow.classification+', '+d.devRow.iso_reference+').';
+  return '## 1. Diagnostic Summary\nISO Zone '+d.zoneRow.zone_label+' ('+d.zoneRow.iso_clause_ref+'). RMS: '+d.rms+' '+d.cu+' on '+d.classRow.machine_type_desc+'.\n'+d.zoneRow.action_required+'\nDeviation: '+devLine+'\nTrend: '+d.trendRow.code+'  -  '+d.trendRow.description+' ('+d.trendRow.iso_reference+').\n'+(d.singleFile?'\nNote: Single measurement file  -  trend direction cannot be established from one snapshot. Multiple readings required per '+d.trendRow.iso_reference+'.':'\nNote: Trend '+d.trendRow.code+' derived from '+d.historyCount+' readings ('+d.trendRow.iso_reference+').')+'\n\n## 2. Primary Fault Analysis\n*'+top.iso_reference+'*\n\n'+top.name+': Fault Indicator — '+faultIndicatorLabel(top.pct)+'.\n'+fA+(sec?'\nSecondary indicator: '+sec.name+' — '+faultIndicatorLabel(sec.pct)+' ('+sec.iso_reference+').':'')+'\n\n## 3. Recommended Actions\n**Immediate:**\n'+(zI===allZ.length-1?'* Controlled shutdown required. Do not restart without engineering authorisation. ('+d.zoneRow.iso_clause_ref+')':zI===allZ.length-2?'* Schedule maintenance within 7 days. ('+d.zoneRow.iso_clause_ref+')':'* Continue current schedule. Document per ISO 55001:2014 S7.5.')+'\n\n**Short-term:**\n* '+(top.category==='bearing'?'Bearing signal is indicative only on single reading. Re-measure at next scheduled interval ('+mi.interval_desc+'). Track CF and Kurtosis trend over multiple readings to build confidence (ISO 13373-2:2016 §8.2). Inspect only if trend confirms deterioration.':top.name.includes('Imbalance')?'Dynamic balance per ISO 1940-1.':top.name.includes('Misalignment')?'Precision alignment. Check soft-foot per ISO 10816-3.':top.name.includes('Looseness')?'Inspect hold-down bolts, grout and baseplate integrity.':'Continue monitoring. Re-baseline post any maintenance (ISO 13373-2:2016 S8.1).')+'\n\n**Long-term:**\n* Re-baseline post-maintenance (ISO 13373-2:2016 S8.1).\n\n## 4. Monitoring Guidance\n*'+mi.iso_reference+'*\n\nInterval: '+mi.interval_desc+'.\nMeasure H/V/A at bearing housings (ISO 13373-1:2002 S5.2). Track RMS, CF, Kurtosis.\n\n## 5. RUL & Prognostic Note\n*'+d.rulR.iso_reference+'*\n\nRUL: '+d.rulR.days+'d +/- '+d.rulR.ci+'d CI.\n'+(d.rulR.days<60?'Below 60 days  -  begin maintenance planning immediately.':'Continue trending to improve RUL accuracy.')+'\nPer '+d.rulR.iso_reference+': this estimate must not be the sole criterion for maintenance deferral. Qualified engineering review required.';
 }
 
 // == MARKDOWN RENDERER ==
