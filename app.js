@@ -1,5 +1,5 @@
 // ── VERSION (update each deploy for verification) ─────────────────────────
-const SCORER_VERSION = 'ba160b1-8'; // Session 12 finding 1a: no-baseline reading no longer synthesizes a self-statistics deviation-sigma (was narrating "step-change from baseline" on the baseline reading itself). devSc=null path added; no FFT/fault-scoring change vs ba160b1-7.
+const SCORER_VERSION = 'ba160b1-9'; // Session 12 findings 1b/1c/1d in one batch. 1b: Zone A "likely driver" language softened (not suppressed) across plainFaultText/mgmt-card/AI-prompt/fallback. 1c: health-index formula rebuilt — zone now sets a score BAND, secondary evidence (kurtosis/CF/bearing/deviation) only moves the score within it, not a flat sum floored at 5. 1d: SCORING-PATH CHANGE — Loose Foundation sub-harmonic requirement (ISO 13379-1 S5.4) now a hard gate (score=0) instead of a soft cap (was min 18) that let the ever-present shaft-harmonic comb leak a false score. CWRU re-run required (A6) before this can be called verified.
 const SB_VERSION = 'sb-jwt-1';       // Supabase client: session JWT + non-2xx logging (DECISIONS A14)
 console.log('[LynxEyes] scorer version:', SCORER_VERSION, '| supabase client:', SB_VERSION);
 
@@ -1275,7 +1275,7 @@ async function runPipeline(raw, filename) {
     rms, kurt, cf,
     finalZoneRow.zone_label,
     topBearingFault ? topBearingFault.pct : 0,
-    devSc === null ? 0 : Math.abs(parseFloat(devSc)),
+    devSc === null ? null : Math.abs(parseFloat(devSc)),
     classRow
   );
 
@@ -1771,19 +1771,49 @@ function calcHealthIndex(rms, kurt, cf, zoneLabel, topBearingPct, devSigma, clas
   // 5. Baseline deviation penalty — ISO 13373-2:2016 §8.1
   // SPC Western Electric 3-sigma rule.
   let devPenalty = 0;
-  if      (devSigma > 3.5) devPenalty = 20;
-  else if (devSigma > 3.0) devPenalty = 15;
-  else if (devSigma > 2.0) devPenalty = 10;
-  else if (devSigma > 1.5) devPenalty = 5;
+  if (devSigma !== null) {
+    if      (devSigma > 3.5) devPenalty = 20;
+    else if (devSigma > 3.0) devPenalty = 15;
+    else if (devSigma > 2.0) devPenalty = 10;
+    else if (devSigma > 1.5) devPenalty = 5;
+  }
   score -= devPenalty;
   breakdown.push({
     label: 'Baseline deviation', penalty: devPenalty,
-    value: devSigma.toFixed(2) + 'σ from baseline',
+    value: devSigma === null ? 'No baseline established' : devSigma.toFixed(2) + 'σ from baseline',
     iso: 'ISO 13373-2:2016 §8.1',
     physics: 'SPC Western Electric rule — 3σ = 99.7% confidence of real change'
   });
 
-  const finalScore = Math.max(5, Math.min(100, score));
+  // DECISIONS A13 (Session 12 finding 1c): previously all five penalties above
+  // (zone, kurtosis, CF, bearing, deviation) were summed flat against a single
+  // score-100-and-floor-at-5 line. That let kurtosis/CF/bearing/deviation alone
+  // push a Zone B or Zone C reading down to the floor before zone — the number
+  // A13 says should be confident and dominant — had much say at all. Observed
+  // case: Zone B scored 16, Zone C scored 5 on the same synthetic trend set,
+  // a 12-point gap driven mostly by fault-score/kurtosis, not the 23-point zone
+  // penalty difference (12 -> 35) that should have been doing the real work.
+  //
+  // Fix: zone now sets a score BAND, not just one term in a sum. The four
+  // supporting-evidence penalties (kurtosis, CF, bearing, deviation) are combined
+  // into a single 0-1 "secondary evidence" fraction and only move the score
+  // WITHIN that zone's band — they can no longer push a reading across a zone's
+  // label tier (Good/Monitor/Caution/Critical) in either direction. A Zone A
+  // reading can never read as Critical no matter how noisy its secondary
+  // indicators are; a Zone D reading can never read as Good no matter how clean
+  // they are. This directly encodes "severity confident, fault-type honest"
+  // rather than letting the two axes compete in one flat number.
+  const zoneBands = {
+    A: { max: 100, min: 88 },
+    B: { max: 87,  min: 64 },
+    C: { max: 63,  min: 40 },
+    D: { max: 39,  min: 5  }
+  };
+  const band = zoneBands[zoneLabel] || zoneBands.D;
+  const secondaryPenalty = kurtPenalty + cfPenalty + bearingPenalty + devPenalty;
+  const secondaryMax = 30 + 20 + 35 + 20; // theoretical max of the four supporting-evidence penalties
+  const secondaryFraction = Math.min(1, secondaryPenalty / secondaryMax);
+  const finalScore = Math.round(band.max - secondaryFraction * (band.max - band.min));
   return {
     score: finalScore,
     breakdown,
@@ -2279,10 +2309,18 @@ function classifyFaults(fft, cf, kurt, dataTypes, machineParams) {
         total += ber(freqs, mags, fh, rule.bandwidth_pct, 3); h2++;
       }
       const avgBer = h2 ? total / h2 : 0;
-      sc = berToScore(avgBer, rule.confidence_weight);
-      // Sub-harmonic required — ISO 13379-1:2012 §5.4
-      if (subBer < 2.0) sc = Math.min(sc, 18);
-      if (avgBer < 2.5) sc = Math.min(sc, 20);
+      // Sub-harmonic at 0.5x shaft is a REQUIRED indicator, not a confidence
+      // modifier — ISO 13379-1:2012 §5.4. Session 12 finding 1d: this previously
+      // only CAPPED the score (min(sc,18)) when the sub-harmonic was absent, so
+      // the shaft-harmonic comb (1x/2x/3x — universal on any rotating machine,
+      // healthy or not) still leaked through a visible false score. Same 2.0
+      // threshold as before; now enforced as a hard gate instead of a soft cap.
+      if (subBer < 2.0) {
+        sc = 0;
+      } else {
+        sc = berToScore(avgBer, rule.confidence_weight);
+        if (avgBer < 2.5) sc = Math.min(sc, 20);
+      }
       sc = Math.min(sc, mechCap);
 
     // ── MECHANICAL UNBALANCE ─────────────────────────────────────────────
@@ -2477,10 +2515,10 @@ function renderMgmtCard(d) {
     if (!fault) return '';
     if (isBearingFault(fault)) {
       // Bearing: indicative only — never say "confirmed" on single reading
-      return ' ' + plainFaultText(fault);
+      return ' ' + plainFaultText(fault, zone);
     }
-    // Shaft-synchronous: confident from raw FFT
-    return ' ' + plainFaultText(fault);
+    // Shaft-synchronous: confident from raw FFT — except Zone A, softened (1b)
+    return ' ' + plainFaultText(fault, zone);
   }
 
   // Single-reading caveat appended to Zone C/D when no trend history
@@ -2526,19 +2564,19 @@ function renderMgmtCard(d) {
     rag = 'red';
     iconChar = '&#128308;';
     statusText = 'Action Required';
-    findingText = plainFaultText(top) + ' Fault severity is high — arrange inspection immediately.';
+    findingText = plainFaultText(top, zone) + ' Fault severity is high — arrange inspection immediately.';
   } else if (topPct >= 40 && !topIsBearing) {
     // Elevated shaft-synchronous fault in Zone A/B — red
     rag = 'red';
     iconChar = '&#128308;';
     statusText = 'Action Required';
-    findingText = plainFaultText(top) + ' Arrange inspection within ' + (rul < 30 ? '7' : rul < 90 ? '30' : '90') + ' days.';
+    findingText = plainFaultText(top, zone) + ' Arrange inspection within ' + (rul < 30 ? '7' : rul < 90 ? '30' : '90') + ' days.';
   } else if (topPct >= 20 && top && !isBearingFault(top)) {
     // Developing shaft-synchronous signal — amber. Raw FFT evidence is reliable.
     rag = 'amber';
     iconChar = '&#128993;';
     statusText = 'Monitor Closely';
-    findingText = plainFaultText(top) + ' Fault signal is developing. Schedule inspection at next planned maintenance window.';
+    findingText = plainFaultText(top, zone) + ' Fault signal is developing. Schedule inspection at next planned maintenance window.';
   } else if (topPct >= 20 && top && isBearingFault(top)) {
     // Bearing-only indicative signal in Zone A/B — keep amber but softer language.
     // Single-file envelope analysis cannot confirm bearing fault type — do not recommend inspection yet.
@@ -2570,7 +2608,7 @@ function renderMgmtCard(d) {
     rag = 'red';
     iconChar = '&#128308;';
     statusText = 'Worsening — Act Soon';
-    findingText = (top ? plainFaultText(top) : 'Vibration level') + ' Condition deteriorating rapidly — schedule maintenance now.';
+    findingText = (top ? plainFaultText(top, zone) : 'Vibration level') + ' Condition deteriorating rapidly — schedule maintenance now.';
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -2602,17 +2640,29 @@ function renderMgmtCard(d) {
 // Bearing faults (BPFO, BPFI, BSF, FTF): stated as indicative activity only.
 //   Single-file envelope/BER analysis cannot confirm bearing fault type without
 //   resonance frequency knowledge or trend data. Language reflects this honestly.
-function plainFaultText(fault) {
+function plainFaultText(fault, zoneLabel) {
   const n = fault.name;
   // Bearing faults — indicative language always on single reading
   if (n.includes('Outer Race'))    return 'Bearing signal activity at outer race frequency (BPFO). Indicative — inspect bearing.';
   if (n.includes('Inner Race'))    return 'Bearing signal activity at inner race frequency (BPFI). Indicative — inspect bearing.';
   if (n.includes('Rolling Element'))return 'Bearing signal activity at ball spin frequency (BSF). Indicative — inspect bearing.';
   if (n.includes('Cage'))          return 'Bearing signal activity at cage frequency (FTF). Indicative — inspect bearing.';
-  // Shaft-synchronous faults — confident language, reliable from raw FFT
-  if (n.includes('Imbalance'))     return 'Dominant 1x shaft frequency — mechanical unbalance is the likely driver.';
-  if (n.includes('Misalignment'))  return 'Elevated 2x/3x shaft harmonics — shaft misalignment is the likely driver.';
-  if (n.includes('Looseness'))     return 'Sub-harmonic and multiple shaft harmonics — mechanical looseness is the likely driver.';
+  // Shaft-synchronous faults — confident language, reliable from raw FFT peak ratios.
+  // Session 12 finding 1b: Zone A means absolute vibration amplitude is negligible
+  // per ISO 10816-3 — a clean 1x/2x/3x shaft peak is present on EVERY healthy
+  // rotating machine, so unqualified "likely driver" language in Zone A over-
+  // diagnoses (A3). Kept, but softened per confirmed direction: describe the
+  // signature honestly without calling it a driver, rather than suppressing it.
+  const softenA = zoneLabel === 'A';
+  if (n.includes('Imbalance'))     return softenA
+    ? 'Dominant 1x shaft frequency present — a typical unbalance signature, but amplitude is negligible at Zone A severity. Not called as a fault driver at this level.'
+    : 'Dominant 1x shaft frequency — mechanical unbalance is the likely driver.';
+  if (n.includes('Misalignment'))  return softenA
+    ? 'Elevated 2x/3x shaft harmonics present — a typical misalignment signature, but amplitude is negligible at Zone A severity. Not called as a fault driver at this level.'
+    : 'Elevated 2x/3x shaft harmonics — shaft misalignment is the likely driver.';
+  if (n.includes('Looseness'))     return softenA
+    ? 'Sub-harmonic and shaft harmonic content present — a typical looseness signature, but amplitude is negligible at Zone A severity. Not called as a fault driver at this level.'
+    : 'Sub-harmonic and multiple shaft harmonics — mechanical looseness is the likely driver.';
   return n + ' signal detected.';
 }
 
@@ -3142,7 +3192,7 @@ async function streamClaude(){
   if(d.devSc===null)flags.push('NO_BASELINE: No prior baseline exists for this asset. This reading establishes the reference. Do NOT describe it as a deviation, step-change, or divergence from baseline — there is nothing yet to deviate from.');
   if(d.faults[0]&&d.faults[0].pct<40)flags.push('LOW_CONFIDENCE: Top fault '+d.faults[0].pct+'%  -  use indicative language only.');
   const zA=getZonesForClass(selClassId)[0];
-  if(parseFloat(d.rms)<zA.rms_upper_mm_s)flags.push('ZONE_A: Machine in Zone A. Routine monitoring only  -  do not over-diagnose.');
+  if(parseFloat(d.rms)<zA.rms_upper_mm_s)flags.push('ZONE_A: Machine in Zone A. Routine monitoring only  -  do not over-diagnose. A clean dominant 1x/2x/3x shaft peak is present on EVERY healthy rotating machine at this amplitude — do NOT call unbalance/misalignment/looseness a "likely driver" here. Describe the signature, state amplitude is negligible, and stop there (see TWO-TIER OUTPUT MODEL below).');
   // A12 (generalised): surface every assumed input as a data-quality flag so the
   // report qualifies its language and never presents an assumed value as measured.
   if(Array.isArray(d.analysisAssumptions)){
@@ -3199,7 +3249,12 @@ async function streamClaude(){
     '  RMS velocity vs ISO 10816-3 boundaries is objective measurement — never hedge this.',
     'TIER 2 — FAULT TYPE (honest confidence):',
     '  Shaft-synchronous faults (unbalance, misalignment, looseness): raw FFT peak ratios are',
-    '  reliable — state as LIKELY DRIVER when confidence >= 20%.',
+    '  reliable — state as LIKELY DRIVER when confidence >= 20%, EXCEPT in Zone A (see below).',
+    '  ZONE A EXCEPTION (Session 12 finding 1b / DECISIONS A3): a clean dominant shaft peak is',
+    '  present on every healthy machine at Zone A amplitude, so "likely driver" over-diagnoses.',
+    '  In Zone A, describe the signature and note amplitude is negligible instead, e.g.:',
+    '  "A dominant 1x shaft frequency is present, consistent with a typical unbalance signature,',
+    '   but amplitude is negligible at Zone A severity — not called as a fault driver at this level."',
     '  Bearing faults (BPFO, BPFI, BSF, FTF): single-file envelope analysis cannot confirm',
     '  bearing fault type without resonance frequency knowledge or trend data.',
     '  ALWAYS use INDICATIVE language for bearing faults: "signal activity at BPFO frequency"',
@@ -3212,13 +3267,13 @@ async function streamClaude(){
     '1. Use ONLY values from the NVR RECORD above. Do not invent bearing models, temperatures, or values not in this data.',
     '2. Obey every DATA QUALITY FLAG — if sample rate was assumed, caveat all frequency-dependent findings.',
     '3. Bearing fault confidence is ALWAYS indicative on a single reading — never use confirmed language.',
-    '4. Shaft-synchronous fault (unbalance/misalignment/looseness) at >= 20% = likely driver language is appropriate.',
+    '4. Shaft-synchronous fault (unbalance/misalignment/looseness) at >= 20% = likely driver language is appropriate, EXCEPT in Zone A — see ZONE A EXCEPTION above; describe the signature there without calling it a driver.',
     '5. Cite ONLY ISO clauses from the NVR record above.',
     '6. Always quote RUL CI. State it cannot replace engineering judgement.',
     ragChunks.length ? '7. Where KNOWLEDGE BASE CONTEXT excerpts are directly relevant, you may reference them to support your analysis. Do not quote them verbatim — synthesise into your report.' : '',
     '','=== REPORT  -  6 SECTIONS ===',
     '1. SEVERITY ASSESSMENT  -  Zone, RMS, action required. State urgency from ISO zone — full confidence.',
-    '2. FAULT ANALYSIS  -  Shaft-synchronous findings (likely driver if present). Bearing findings (indicative only, explicit hedge).',
+    '2. FAULT ANALYSIS  -  Shaft-synchronous findings (likely driver if present, softened per ZONE A EXCEPTION in Zone A). Bearing findings (indicative only, explicit hedge).',
     '3. SUPPORTING INDICATORS  -  CF, kurtosis, deviation from baseline. What they suggest, not confirm.',
     '4. RECOMMENDED ACTIONS  -  Immediate/Short-term/Long-term. Driven by zone severity, not fault confidence. Each must cite an ISO clause.',
     '5. MONITORING GUIDANCE  -  Interval and parameters. Recommend trend data to build bearing fault confidence. Cite ISO 13373-1 clause.',
@@ -3382,6 +3437,7 @@ function buildFallback(d){
   // Bearing faults: signal activity language only — never "defect confirmed" on single reading.
   // Shaft-synchronous faults: confident "likely driver" language — raw FFT peak ratios are reliable.
   const isBearingTop = isBearingFault(top);
+  const softenA = d.zoneRow.zone_label === 'A';
   const fA = top.name.includes('Outer Race')
     ? 'Signal activity detected at outer race frequency (BPFO = ' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz), '
       + top.harmonics_used + ' harmonic(s). INDICATIVE ONLY — single-file envelope analysis cannot confirm bearing fault type. '
@@ -3399,13 +3455,19 @@ function buildFallback(d){
       + top.harmonics_used + ' harmonic(s). INDICATIVE ONLY — re-measure to confirm. Per ' + top.iso_reference + '.'
     : top.name.includes('Imbalance')
     ? '1x shaft frequency component dominant at ~' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz, '
-      + top.harmonics_used + ' harmonic(s). Mechanical unbalance is the likely driver. Dynamic balancing recommended. Per ' + top.iso_reference + '.'
+      + top.harmonics_used + ' harmonic(s). ' + (softenA
+        ? 'A typical unbalance signature, but amplitude is negligible at Zone A severity — not called as a fault driver at this level. Per ' + top.iso_reference + '.'
+        : 'Mechanical unbalance is the likely driver. Dynamic balancing recommended. Per ' + top.iso_reference + '.')
     : top.name.includes('Misalignment')
     ? '2x/3x shaft harmonic content elevated at ~' + (top.freq_hz ? top.freq_hz.toFixed(1) : 'est.') + ' Hz, '
-      + top.harmonics_used + ' harmonic(s). Shaft misalignment is the likely driver. Precision alignment check recommended. Per ' + top.iso_reference + '.'
+      + top.harmonics_used + ' harmonic(s). ' + (softenA
+        ? 'A typical misalignment signature, but amplitude is negligible at Zone A severity — not called as a fault driver at this level. Per ' + top.iso_reference + '.'
+        : 'Shaft misalignment is the likely driver. Precision alignment check recommended. Per ' + top.iso_reference + '.')
     : top.name.includes('Looseness')
     ? 'Sub-harmonic and multiple shaft harmonics present, ' + top.harmonics_used + ' matched. '
-      + 'Mechanical looseness is the likely driver. Inspect hold-down bolts and baseplate integrity. Per ' + top.iso_reference + '.'
+      + (softenA
+        ? 'A typical looseness signature, but amplitude is negligible at Zone A severity — not called as a fault driver at this level. Per ' + top.iso_reference + '.'
+        : 'Mechanical looseness is the likely driver. Inspect hold-down bolts and baseplate integrity. Per ' + top.iso_reference + '.')
     : 'Signal activity at ' + top.name + ' frequency, ' + top.harmonics_used + ' harmonic(s) matched. Per ' + top.iso_reference + '.';
   const devLine = d.devSc===null
     ? 'No baseline established yet  -  this reading will become the reference ('+d.devRow.iso_reference+').'
