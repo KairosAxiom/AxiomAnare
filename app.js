@@ -1,5 +1,5 @@
 // ── VERSION (update each deploy for verification) ─────────────────────────
-const SCORER_VERSION = 'ba160b1-6'; // BER-DEBUG logging removed (no scoring change vs ba160b1-5)
+const SCORER_VERSION = 'ba160b1-7'; // trend: current reading counted toward 3-reading minimum; created_at tie-break on history order. No FFT/fault-scoring change vs ba160b1-6.
 const SB_VERSION = 'sb-jwt-1';       // Supabase client: session JWT + non-2xx logging (DECISIONS A14)
 console.log('[LynxEyes] scorer version:', SCORER_VERSION, '| supabase client:', SB_VERSION);
 
@@ -519,7 +519,10 @@ async function resolveAsset(assetName, machineClass, equipType, measPoint) {
 async function loadAssetHistory(assetId, limit=10) {
   if (!assetId) return [];
   const rows = await SB.get('nvr_records',
-    'asset_id=eq.'+assetId+'&order=recorded_at.desc&limit='+limit+'&select=filename,rms_mms,kurtosis,crest_factor,iso_zone,top_fault,top_fault_pct,health_score,recorded_at,is_baseline'
+    // recorded_at is the engineer-stated measurement date at fixed noon, so
+    // same-day readings collide. created_at (upload time) breaks the tie so
+    // the trend regression always sees a stable, reproducible sequence.
+    'asset_id=eq.'+assetId+'&order=recorded_at.desc,created_at.desc&limit='+limit+'&select=filename,rms_mms,kurtosis,crest_factor,iso_zone,top_fault,top_fault_pct,health_score,recorded_at,created_at,is_baseline'
   );
   return rows || [];
 }
@@ -1195,17 +1198,22 @@ async function runPipeline(raw, filename) {
   // Stage 3  -  Trend State Assessment — ISO 13373-2:2016 §8.2
   await activateStage(3);
   let trendRow;
-  if (history.length >= 3) {
-    // Real trend from historical readings
-    const trendCode = computeTrendFromHistory(history);
+  // The current reading is the newest point in the series and counts toward
+  // the ISO 13373-2 §8.2 three-reading minimum. history is newest-first from
+  // the DB, so the current reading is prepended. Sequence = engineer-stated
+  // measurement date; upload order only breaks same-day ties (see loadAssetHistory).
+  const trendSeries = [{ rms_mms: rms, recorded_at: null, _current: true }, ...history];
+  if (trendSeries.length >= 3) {
+    // Real trend from stored readings + current
+    const trendCode = computeTrendFromHistory(trendSeries);
     trendRow = CONFIG.trend_state_rules.find(r => r.code === trendCode) || CONFIG.trend_state_rules.find(r => r.code === 'DDU');
-    doneStage(3, trendRow.code+' ('+history.length+' readings) — '+trendRow.label);
+    doneStage(3, trendRow.code+' ('+trendSeries.length+' readings incl. current) — '+trendRow.label);
   } else {
     // DDU — insufficient history for trend (ISO 13373-2:2016 §8.2)
     trendRow = CONFIG.trend_state_rules.find(r => r.code === 'DDU');
     const trendNote = persistState === 'anon' ? 'sign in to build trend history'
       : persistState === 'failed' ? 'reading not saved'
-      : (history.length)+' reading'+(history.length===1?'':'s')+' — need 3+';
+      : (trendSeries.length)+' reading'+(trendSeries.length===1?'':'s')+' incl. current — need 3+';
     doneStage(3, 'DDU — '+trendRow.label+' ('+trendNote+')');
   }
 
@@ -1324,8 +1332,8 @@ async function runPipeline(raw, filename) {
     earlyWarn, faults: faults.length ? faults : allFaults.slice(0, CONFIG.fault_display_limit),
     fftR, rulR: finalRulR, n, sr, srSource, sampleRateAssumed, sampleRateBanner, analysisAssumptions, classRow, cu, shaftHz,
     override, healthIdx,
-    singleFile: history.length < 3,
-    historyCount: history.length,
+    singleFile: trendSeries.length < 3,
+    historyCount: trendSeries.length,   // stored readings + current (matches trend card count)
     assetName: machineParams.assetName || null,
     machineParams: {...machineParams},
     _persist: persistState,
@@ -3586,7 +3594,7 @@ function mdToHtml(md) {
           const hist = nvr._history || [];
           const records = hist.filter(function(r){return r.iso_zone==='A';}).concat([{ rms_mms: nvr.rms }]);
           await saveBaseline(asset.id, records);
-          await SB.patch('nvr_records','asset_id=eq.'+asset.id+'&order=recorded_at.desc&limit=1',{is_baseline:true}).catch(function(){});
+          await SB.patch('nvr_records','asset_id=eq.'+asset.id+'&order=recorded_at.desc,created_at.desc&limit=1',{is_baseline:true}).catch(function(){});
           btn.innerHTML = '&#10003; Baseline saved'; btn.style.background = '#22c55e';
           setTimeout(function(){ toast.remove(); }, 2200);
         } else {
