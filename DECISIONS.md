@@ -231,6 +231,35 @@ MechEyes/Gemini transcript review, Part B, 3 Sep 2026.
 
 ---
 
+### A16. No Supabase helper may swallow a non-2xx response (formalised 4 Sep 2026, built)
+Every client-side Supabase call (`SB.get/post/patch` in app.js; fleet.html's own helpers) must log
+table, HTTP status and PostgREST `code`/`message` to the Console on any non-2xx response before
+returning `null`. A refused write must be VISIBLE — never indistinguishable from an empty result.
+
+**Origin:** the asset-trend feature died silently for ~3.5 months. RLS v2 (22 May 2026) correctly
+refused anon writes with `42501`; `SB` returned `null` on any non-ok response with no log;
+`resolveAsset()` fell through to `{ id: null }`; Stage 3 reported "DDU — 0 readings" and the trend
+card said "need 3+" — exactly what a first reading on a new asset looks like. No `nvr_records` or
+`fault_signatures` row was written by anyone in that window. A8 had flagged "verify this hasn't
+silently broken the free flow"; Session 10 reproduced it; Session 11 root-caused and fixed it.
+
+**A8 corollary — "an individual = an org of one" was intent, not fact.** `handle_new_user` created
+profiles with `org_id = NULL`; index.html signups could not write to any org-scoped table even when
+signed in; the client never sent `org_id`. Fixed by `org_of_one_v1.sql` (profiles BEFORE INSERT
+creates the org; assets / nvr_records BEFORE INSERT fill `org_id`; column guard relaxed ONLY for
+moving between orgs the user owns). No RLS policy was changed.
+
+**Testing rule:** an `is_admin = true` account passes the admin policy on every table and cannot
+prove the org-scoped path. Persistence and trend tests run on a NON-admin account.
+
+**Trend sequence rule (same session):** `recorded_at` (engineer-stated measurement date, fixed
+12:00 UTC) is the truth about SEQUENCE. `nvr_records.created_at` (upload time) breaks same-day
+ties ONLY. The current reading counts toward the ISO 13373-2 §8.2 three-reading minimum.
+Code comment note: app.js `SB` block cites "DECISIONS A14" — that number was taken before A14/A15
+existed in this file; it means A16. Correct the comment on the next app.js touch.
+
+---
+
 ## PART B — DECISIONS (history & rationale)
 
 ### Why CONFIG-as-data
@@ -584,3 +613,22 @@ Reviewed and consciously NOT adopted — see Part B (3 Sep 2026) for the review 
   is null` (121 rows, prod data change — A9 snapshot first); (4) `KB/Reference/CWRU_Dataset_Overview.md`
   was never ingested — decide whether it still adds anything next to `cwru_benchmark_01`; (5) drop
   `knowledge_chunks_bak_20260903` once (1)–(3) are verified.
+- **Trend regression, 22 May → 4 Sep 2026 (three causes stacked):** (1) app.js `SB` sent the anon
+  key as Bearer on every call, never the session JWT; (2) `SB` swallowed every non-2xx as `null` with
+  no log; (3) no org-of-one — profiles had `org_id = NULL`. Each alone would have been found in a day;
+  together they produced a UI state identical to "first reading on a new asset". → A16.
+- **Anonymous trend via a scoped anon exception** (A8's "or needs a deliberate scoped anon exception")
+  — rejected 4 Sep 2026. Anonymous "Free to Try" stays single-shot with an honest "Sign in to save
+  readings and trend this asset" message. Persistence is the reason to create an account. Whether the
+  FREE tier keeps persistence after launch is open — see CONTEXT.md `FREE_SIGNUP_ENABLED`.
+- **Same-day readings collide on `recorded_at`** (found 4 Sep 2026): five uploads in 20 minutes all
+  stamped 12:00 UTC; Postgres returned them in arbitrary order; the trend regression ran on a shuffled
+  series and reported RGI ("improving") on a machine going 2.75 → 22.6 mm/s. Fixed with
+  `nvr_records.created_at` as secondary sort. Also a concrete example for A10: five readings 20
+  minutes apart are a stress test, not a trend, and the engine cannot tell yet.
+- **Trend off-by-one** (found 4 Sep 2026): `computeTrendFromHistory` counted only STORED readings;
+  the current reading is not stored until after analysis, so the third upload still said DDU while
+  the trend card said "3 readings". Fixed in ba160b1-7.
+- **Supabase Auth URL Configuration still pointed at esimconnect.github.io** until 4 Sep 2026 —
+  confirmation emails 404'd. Now `https://kairosaxiom.github.io/AxiomAnare` + `/AxiomAnare/**`.
+  Revisit the same screen when lynxeyes.io goes live.

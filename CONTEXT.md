@@ -196,7 +196,24 @@ is_admin (boolean — ADDED 22 May by RLS migration)
 See prior session logs for full detail. Status: CLOSED and org-scoped.
 rls_foundation_v2.sql applied to prod. All customer data is org-scoped.
 bearing_library keeps anon SELECT (free diagnostic needs it).
-First admin bootstrapped: davidlimyk@gmail.com.
+First admin bootstrapped: davidlimyk@gmail.com — attached 4 Sep 2026 to the
+existing org "Kairos Axiom" (b0a5b185…) as owner.
+
+### org-of-one — IMPLEMENTED 4 Sep 2026 (org_of_one_v1.sql, run on prod)
+- profiles BEFORE INSERT `trg_ensure_profile_org`: creates an organisation-of-one
+  when org_id is NULL (fires after handle_new_user).
+- assets BEFORE INSERT `trg_assets_fill_org_id`: org_id := current_org_id() if omitted.
+- nvr_records BEFORE INSERT `trg_nvr_records_fill_org_id`: org_id from parent asset.
+- Column guard relaxed ONLY for moving between orgs the user owns (owner_id = auth.uid()).
+- nvr_records.created_at added 4 Sep (nvr_records_created_at_v1.sql, indexed) —
+  same-day tie-break only; recorded_at stays the sequence truth.
+- No RLS policy was changed. rls_foundation_v2 policies remain authoritative.
+- Client side: app.js `SB` now sends the session JWT (SB_VERSION sb-jwt-1) and
+  logs every non-2xx (DECISIONS A16). Anonymous users skip asset/history lookup.
+
+### Supabase Auth → URL Configuration (fixed 4 Sep 2026)
+Site URL `https://kairosaxiom.github.io/AxiomAnare`; Redirect allow-list
+`https://kairosaxiom.github.io/AxiomAnare/**`. esimconnect entries removed.
 
 ---
 
@@ -232,16 +249,34 @@ agnostic file parser, RAG pipeline, Stripe integration (code, not live),
 RLS foundation (applied to prod), admin bootstrap, CWRU benchmark,
 tier gating (fleet behind flag), Supabase keep-alive cron (verified),
 KB at 201 chunks embedded (3 Sep 2026). Two-tier output model (A13) implemented and
-verified against CWRU Normal + Ball_007 files (2 Sep 2026).
+verified against CWRU Normal + Ball_007 files (2 Sep 2026). Asset persistence +
+trend restored and verified with a non-admin free account (4 Sep 2026, Session 11).
 
 ## In Progress
 - [ ] Admin dashboard (admin.html) — status not re-verified recently
-- [ ] Phase 1.5 stress testing (see Build Sequence)
-- [ ] Remove BER-DEBUG console.log from app.js before next embed pass
+- [ ] Phase 1.5 stress testing (see Build Sequence). Free-flow under RLS: CLOSED
+      4 Sep (Session 11). Next: trend-DIRECTION test, fleet flow, Stripe wiring.
+
+## Testing-phase flags (flip before launch)
+- `FLEET_GATING_ENABLED = false` (fleet.html)
+- `FREE_SIGNUP_ENABLED = true` (auth.js, added 4 Sep) — Subscribe modal offers a
+  $0 Free card that creates the account with NO Stripe call. Decide before
+  launch: (a) keep Free-with-persistence as the funnel hook, or (b) false.
+- Test artefacts on prod: org 70eb23a1… (kairosventure.io@gmail.com, tier=free,
+  NON-admin — use this for persistence/trend tests, not the admin account) with
+  assets CWRU Test 06 (5 same-day readings), CWRU_OR (2), CWRU-97/105/118/234
+  single-reading assets. Harmless; delete when convenient.
 
 ## Not Started
 - [ ] Fix README.md's stale live-app link
-- [ ] Embed 9 KB chunks (5aa2904 repo-only) — deferred until BER-DEBUG removed
+- [ ] fleet.html register path NOT re-verified after org_of_one_v1 guard change
+      (creates org then assigns it — guard now permits only owner→owner moves)
+- [ ] fleet.html fetch helpers not audited for A16 (non-2xx logging)
+- [ ] app.js `SB` comments cite "DECISIONS A14" — should read A16; fix on next touch
+- [ ] Sample-rate provenance: CWRU_OR_fault_007 gave sr 12048 / shaft 29.414 Hz on
+      two runs and 12000 / 29.950 on another, same scorer. Input-source difference
+      (auto-detect vs entered), not scoring. Check the Analysis Assumptions note (A12).
+- [ ] Delete stale untracked rls_foundation.sql (v1) from working dir
 - [ ] Emoji cleanup in UI (17 instances) — explicitly deferred by David
 - [ ] Color-literal-to-var() cleanup
 - [ ] Digital twin Phase 1, ML feature extraction, case library population,
@@ -253,8 +288,8 @@ verified against CWRU Normal + Ball_007 files (2 Sep 2026).
 - [ ] Mandatory input metadata / no silent defaults (DECISIONS A12) —
       formalized, not yet implemented. Known live gap: sample rate silently
       defaults to 1.0 kHz when omitted.
-- [ ] Phase 1.5 stress testing: free-flow under RLS (incognito), fleet flow,
-      Stripe wiring, close small bugs (count-of-1 badge pluralisation)
+- [ ] Phase 1.5 stress testing: fleet flow, Stripe wiring, close small bugs
+      (count-of-1 badge pluralisation). Free-flow under RLS closed 4 Sep.
 - [ ] Flip FLEET_GATING_ENABLED to true before launch
 - [ ] Wire lynxeyes.io when acquired (Supabase Auth redirect, Worker CORS,
       Stripe URLs)
@@ -475,4 +510,90 @@ Next session (in order):
      ISO 20816-3 edition question (A1 open item — rank above cosmetics).
   5. A14 measured-1x anchoring (also answers the "shaft auto-detect slightly off" question)
      and A15 resolution guard — Phase 1.5 accuracy work, CWRU re-run after (A6).
+```
+
+## Session Log — 4 Sep 2026 (Session 11 — trend regression root-caused and fixed)
+```
+Opened as a product-objective review: are trend, amplitude and frequency all
+factored in? Amplitude (RMS → ISO zone) and frequency (comb search, BPFO/BPFI/
+BSF/FTF, envelope/BER) confirmed solid. Trend found DEAD; David confirmed it had
+worked before the rename. Session 10's "free-flow RLS reproduced" item was the
+same bug seen from the anonymous side.
+
+ROOT CAUSE (Network tab, incognito + signed-in reasoning) — three layers:
+  1. RLS v2 (22 May) refuses anon writes → 42501 on POST assets / nvr_records.
+     Correct behaviour (A8).
+  2. app.js `SB` sent the ANON key as Bearer on every call, never the session
+     JWT — signed-in users were refused too.
+  3. `SB` swallowed every non-2xx as `null` with no log → resolveAsset →
+     {id:null} → history [] → "DDU, 0 readings — need 3+". Indistinguishable
+     from a fresh asset. Console showed nothing.
+  4. Even with a JWT: index.html signups have profiles.org_id = NULL
+     (handle_new_user never created an org) and the client never sent org_id
+     → org-scoped WITH CHECK fails. "Org of one" was never implemented.
+  Consequence: NO nvr_records / fault_signatures rows written by anyone since
+  22 May. All asset history starts from zero after the fix.
+
+COMMIT 3f59f45 — app.js (SB_VERSION sb-jwt-1), auth.js, org_of_one_v1.sql:
+  - SB resolves session JWT lazily at request time (app.js loads before
+    supabase-js/auth.js); logs "[SB] METHOD table -> HTTP nnn — code message"
+    on every non-2xx (A16); skips asset/history lookup when not signed in;
+    `persistState` ('anon'|'ok'|'failed') carried on nvr as `_persist`;
+    Stage 2/3 text and trend-card badge say "Sign in to save readings and trend
+    this asset" (anon) or "NOT saved (see Console)" (failed). Baseline toast
+    "Login to save" opens the auth modal instead of linking to fleet.html.
+    SCORER_VERSION unchanged (ba160b1-6) — no diagnostic change.
+  - auth.js: FREE_SIGNUP_ENABLED flag (true). Free card → signUp → success
+    panel with Sign-in button, no Stripe. Button label switches "Create Free
+    Account" / "Continue to Payment". Restored _showSignupSuccess() (dropped
+    by the Stripe session).
+  - org_of_one_v1.sql: create_org_of_one(); profiles BEFORE INSERT auto-org;
+    assets BEFORE INSERT org_id := current_org_id(); nvr_records BEFORE INSERT
+    org_id from parent asset; guard relaxed for owner→owner org moves only;
+    backfill (found no NULL rows after the pre-step below). Zero policy changes.
+  - Pre-step run by hand: organisations "Kairos Axiom" owner_id := David;
+    David's profile org_id := Kairos Axiom (guard disabled for that statement).
+  - Supabase Auth URL Configuration was still esimconnect.github.io — email
+    confirmation 404'd. Set Site URL + /AxiomAnare/** allow-list to kairosaxiom.
+
+VERIFIED on prod with NON-admin free account kairosventure.io@gmail.com:
+  5/5 uploads → nvr_records 201, org_id auto-filled by trigger, Stage 2
+  baseline comparison live (51.99σ vs stored baseline on reading 2).
+
+TWO MORE TREND BUGS found during verification → COMMIT 97ebc25
+(SCORER_VERSION ba160b1-7; nvr_records_created_at_v1.sql run on prod):
+  1. Off-by-one: computeTrendFromHistory counted only STORED readings; the
+     current reading is not stored until after analysis, so upload 3 still
+     said DDU while the trend card said "3 readings". Fixed: trendSeries =
+     [current, ...history]; singleFile / historyCount / AI-prompt flags all use
+     the same count.
+  2. Timestamp collision: recorded_at = measurement date at fixed 12:00 UTC;
+     same-day readings tie; Postgres returned them in arbitrary order; the
+     regression ran on a shuffled series → RGI ("improving") on a machine going
+     2.75 → 22.6 mm/s. Fixed: nvr_records.created_at (default now(), indexed)
+     as secondary sort key. recorded_at stays the sequence truth.
+
+CWRU RE-RUN on ba160b1-7 (each file on a fresh asset, single-file):
+  97 → Zone B / Rolling Element 24 % · 105 → D / IR 14 % · 118 → D / BPFI 40 %
+  (known misfire, hedged) · 130 (OR_007) → D / OR 25 % · 234 (OR_021) → D / OR
+  18 %. All five identical to ba160b1-6. No regression.
+
+Testing shortcut recorded: the 5-analysis limit is localStorage-only
+(`ax_analysis_count`, `ax_tier`). `localStorage.removeItem('ax_analysis_count')`
+resets it; `localStorage.setItem('ax_tier','pro')` lifts every free gate on
+that browser (syncTier() overwrites it on load only when signed in). No code
+change made for this.
+
+Files changed: app.js, auth.js, org_of_one_v1.sql, nvr_records_created_at_v1.sql
+(both utility — already run on prod), CONTEXT.md, DECISIONS.md (A16 + Part C).
+Delete from working dir: DOCS_APPEND_session11.md (merged), rls_foundation.sql (v1).
+
+Next session (in order):
+  1. TREND-DIRECTION test: one asset, five files in worsening order
+     (normal → OR_007 → Ball_007 → IR_007 → OR_021), five DISTINCT measurement
+     dates a week apart, non-admin account. Expect PRA from reading 3, RUL falling.
+  2. fleet.html: register path after the guard change; fetch helpers for A16.
+  3. Audit one AI report for internal-governance leakage; RAG hygiene bundle.
+  4. Fleet flow under RLS, Stripe wiring (Phase 1.5 continues).
+  5. A14 measured-1× anchoring, A15 resolution guard — CWRU re-run after (A6).
 ```
